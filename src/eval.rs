@@ -4,8 +4,8 @@ use crate::expr::*;
 
 // Evaluate the parsed expression.
 #[derive(PartialEq, Debug)]
-struct Eval<'a> {
-    expr: Vec<Op<'a>>,
+pub struct Eval<'a> {
+    pub expr: Vec<Op<'a>>,
 }
 
 impl<'a> Eval<'a> {
@@ -180,7 +180,7 @@ fn create_binary_with_unary_expr() {
 }
 
 #[test]
-fn create_complex_expr_expr() {
+fn create_complex_expr() {
     let expr = Expr {
         ops: vec![
             Op::Not,
@@ -214,6 +214,40 @@ fn create_complex_expr_expr() {
             Op::LessEq,
             Op::Operand(Operand::Object(Object { name: "some" })),
             Op::Operand(Operand::Object(Object { name: "val" })),
+        ],
+    };
+    assert_eq!(Eval::new(expr).unwrap(), expected_eval);
+}
+
+#[test]
+fn create_complex_expr2() {
+    let expr = Expr {
+        ops: vec![
+            Op::Operand(Operand::Object(Object { name: "var1" })),
+            Op::GreaterEq,
+            Op::Operand(Operand::Object(Object { name: "var2" })),
+            Op::And,
+            Op::Operand(Operand::Object(Object { name: "var2" })),
+            Op::LessEq,
+            Op::Operand(Operand::Object(Object { name: "var3" })),
+            Op::Or,
+            Op::Not,
+            Op::Operand(Operand::Object(Object { name: "var3" })),
+        ],
+    };
+
+    let expected_eval = Eval {
+        expr: vec![
+            Op::Or,
+            Op::And,
+            Op::GreaterEq,
+            Op::Operand(Operand::Object(Object { name: "var1" })),
+            Op::Operand(Operand::Object(Object { name: "var2" })),
+            Op::LessEq,
+            Op::Operand(Operand::Object(Object { name: "var2" })),
+            Op::Operand(Operand::Object(Object { name: "var3" })),
+            Op::Not,
+            Op::Operand(Operand::Object(Object { name: "var3" })),
         ],
     };
     assert_eq!(Eval::new(expr).unwrap(), expected_eval);

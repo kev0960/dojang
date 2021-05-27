@@ -16,16 +16,16 @@ pub enum Op<'a> {
     Operand(Operand<'a>),
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum Operand<'a> {
     Literal(&'a str),
-    Number(u64),
+    Number(i64),
     Decimal(f64),
     Object(Object<'a>),
 }
 
 // Name that will be found in the execution context.
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct Object<'a> {
     pub name: &'a str,
 }
@@ -101,7 +101,7 @@ impl<'a> Expr<'a> {
                 return Some(Operand::Number(expr.parse().unwrap_or(0)));
             }
         } else if first_char == '"' {
-            return Some(Operand::Literal(expr));
+            return Some(Operand::Literal(&expr[1..expr.len() - 1]));
         }
 
         Some(Operand::Object(Object { name: expr }))
@@ -158,11 +158,13 @@ pub fn operator_priority(op: &Op) -> u32 {
         Op::NotEqual => 7,
         Op::And => 11,
         Op::Or => 12,
-        _ => 100,
+        Op::ParenOpen => 100,
+        Op::ParenClose => 100,
+        _ => panic!("Oops {:?}", op),
     }
 }
 
-pub fn operator_num_operands(op: &Op) -> u32 {
+pub fn operator_num_operands(op: &Op) -> usize {
     match op {
         Op::Not => 1,
         _ => 2,
@@ -197,6 +199,20 @@ fn parse_simple_expr_with_unary() {
 }
 
 #[test]
+fn parse_simple_literal() {
+    let result = Expr::parse(r#"some_value == "abc""#);
+
+    let expected_expr = Expr {
+        ops: vec![
+            Op::Operand(Operand::Object(Object { name: "some_value" })),
+            Op::Equal,
+            Op::Operand(Operand::Literal("abc")),
+        ],
+    };
+    assert_eq!(result.unwrap(), expected_expr);
+}
+
+#[test]
 fn parse_complex_expr() {
     let result = Expr::parse("!some_value && ((var1 != var2) || some <= val)");
 
@@ -216,6 +232,28 @@ fn parse_complex_expr() {
             Op::LessEq,
             Op::Operand(Operand::Object(Object { name: "val" })),
             Op::ParenClose,
+        ],
+    };
+
+    assert_eq!(result.unwrap(), expected_expr);
+}
+
+#[test]
+fn parse_complex_expr2() {
+    let result = Expr::parse(r"var1 >= var2 && var2 <= var3 || !var3 ");
+
+    let expected_expr = Expr {
+        ops: vec![
+            Op::Operand(Operand::Object(Object { name: "var1" })),
+            Op::GreaterEq,
+            Op::Operand(Operand::Object(Object { name: "var2" })),
+            Op::And,
+            Op::Operand(Operand::Object(Object { name: "var2" })),
+            Op::LessEq,
+            Op::Operand(Operand::Object(Object { name: "var3" })),
+            Op::Or,
+            Op::Not,
+            Op::Operand(Operand::Object(Object { name: "var3" })),
         ],
     };
 
