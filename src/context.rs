@@ -294,6 +294,15 @@ fn compute_not<'a>(operand: Operand) -> Result<Operand<'a>, String> {
     }
 }
 
+#[cfg(test)]
+fn get_expr<'a>(s: &'a str) -> Expr<'a> {
+    let mut res = Parser::parse(s).unwrap();
+    match res.parse_tree.pop().unwrap() {
+        Action::Do(expr) => expr,
+        _ => panic!("No expr found"),
+    }
+}
+
 #[test]
 fn compute_and_test() {
     let context_json = r#"{"a": 1, "b":0, "c":"abc", "d":"", "e": "def"}"#;
@@ -303,19 +312,19 @@ fn compute_and_test() {
     };
 
     {
-        let eval = Eval::new(Expr::parse(r"a && b").unwrap()).unwrap();
+        let eval = Eval::new(get_expr(r"a && b")).unwrap();
         let result = eval.compute(&context);
 
         assert_eq!(result.unwrap(), Operand::Number(0));
     }
     {
-        let eval = Eval::new(Expr::parse(r"c && d").unwrap()).unwrap();
+        let eval = Eval::new(get_expr(r"c && d")).unwrap();
         let result = eval.compute(&context);
 
         assert_eq!(result.unwrap(), Operand::Number(0));
     }
     {
-        let eval = Eval::new(Expr::parse(r"c && e").unwrap()).unwrap();
+        let eval = Eval::new(get_expr(r"c && e")).unwrap();
         let result = eval.compute(&context);
 
         assert_eq!(result.unwrap(), Operand::Number(1));
@@ -331,19 +340,19 @@ fn compute_or_test() {
     };
 
     {
-        let eval = Eval::new(Expr::parse(r"(a && b) || (c && e)").unwrap()).unwrap();
+        let eval = Eval::new(get_expr(r"(a && b) || (c && e)")).unwrap();
         let result = eval.compute(&context);
 
         assert_eq!(result.unwrap(), Operand::Number(1));
     }
     {
-        let eval = Eval::new(Expr::parse(r"(a && b) || (c && d)").unwrap()).unwrap();
+        let eval = Eval::new(get_expr(r"(a && b) || (c && d)")).unwrap();
         let result = eval.compute(&context);
 
         assert_eq!(result.unwrap(), Operand::Number(0));
     }
     {
-        let eval = Eval::new(Expr::parse(r"c || e").unwrap()).unwrap();
+        let eval = Eval::new(get_expr(r"c || e")).unwrap();
         let result = eval.compute(&context);
 
         assert_eq!(result.unwrap(), Operand::Number(1));
@@ -359,21 +368,21 @@ fn compute_complex() {
     };
 
     {
-        let eval = Eval::new(Expr::parse(r"!a && ((b != a) || c <= e)").unwrap()).unwrap();
+        let eval = Eval::new(get_expr(r"!a && ((b != a) || c <= e)")).unwrap();
         let result = eval.compute(&context);
 
         assert_eq!(result.unwrap(), Operand::Number(0));
     }
     {
-        let eval = Eval::new(Expr::parse(r"!b && ((b != a) || c <= e && !d)").unwrap()).unwrap();
+        let eval = Eval::new(get_expr(r"!b && ((b != a) || c <= e && !d)")).unwrap();
         let result = eval.compute(&context);
 
         assert_eq!(result.unwrap(), Operand::Number(1));
     }
     {
-        let eval = Eval::new(
-            Expr::parse(r#"(a == 1) && (b == 0) && (c == "abc") && !d && e == "def""#).unwrap(),
-        )
+        let eval = Eval::new(get_expr(
+            r#"(a == 1) && (b == 0) && (c == "abc") && !d && e == "def""#,
+        ))
         .unwrap();
         let result = eval.compute(&context);
 

@@ -35,78 +35,230 @@ pub struct Expr<'a> {
     pub ops: Vec<Op<'a>>,
 }
 
-impl<'a> Expr<'a> {
-    pub fn parse(mut expr: &'a str) -> Result<Self, String> {
-        let mut ops = Vec::new();
-        while !expr.is_empty() {
-            match expr.find(&['&', '|', '(', ')', '!', '=', '<', '>'][..]) {
-                Some(index) => {
-                    match Expr::parse_operand(&expr[..index]) {
-                        Some(operand) => {
-                            ops.push(Op::Operand(operand));
-                        }
-                        _ => {}
-                    }
+#[derive(PartialEq, Debug)]
+pub enum Action<'a> {
+    Show(Show<'a>),
+    If(Expr<'a>),    // If condition
+    While(Expr<'a>), // Loop condition
+    End(),           // Closing }
+    Do(Expr<'a>),
+    Null(),
+}
 
-                    // Check for the binary operators.
-                    if expr.len() >= index + 2 {
-                        if let Some(op) = check_binary_op(&expr[index..index + 2]) {
-                            ops.push(op);
-                            expr = &expr[index + 2..];
+impl<'a> Action<'a> {
+    pub fn add_op(&mut self, op: Op<'a>) {
+        match self {
+            Action::Show(show) => match show {
+                Show::Expr(e) => e.ops.push(op),
+                _ => panic!(format!("Cannot add op to Show; op {:?}", op)),
+            },
+            Action::If(expr) => {
+                expr.ops.push(op);
+            }
+            Action::While(expr) => {
+                expr.ops.push(op);
+            }
+            Action::Do(expr) => {
+                expr.ops.push(op);
+            }
+            _ => panic!(format!("Cannot add op to {:?}; op {:?}", self, op)),
+        }
+    }
+}
+
+#[derive(PartialEq, Debug)]
+enum Show<'a> {
+    Html(&'a str),
+    Expr(Expr<'a>),
+}
+
+#[derive(PartialEq, Debug)]
+pub struct Parser<'a> {
+    pub parse_tree: Vec<Action<'a>>,
+}
+
+impl<'a> Parser<'a> {
+    pub fn parse(template: &'a str) -> Result<Self, String> {
+        let mut current = 0;
+        let mut token_begin = 0;
+
+        let mut parse_tree = Vec::new();
+        parse_tree.push(Action::Do(Expr { ops: Vec::new() }));
+
+        while current < template.len() {
+            let current_char = template.chars().nth(current).unwrap();
+
+            // Check string literal.
+            if current_char == '"' {
+                match Parser::handle_string_literal(template, current, &mut parse_tree) {
+                    Ok(end_of_literal) => {
+                        current = end_of_literal;
+                        token_begin = current;
+                        continue;
+                    }
+                    Err(e) => return Err(e),
+                }
+            }
+
+            // Handle Operators.
+            match template[current..current + 1].find(&['&', '|', '(', ')', '!', '=', '<', '>'][..])
+            {
+                Some(_) => {
+                    Parser::handle_operand(
+                        &template[token_begin..current],
+                        parse_tree.last_mut().unwrap(),
+                    );
+
+                    match Parser::handle_operator(template, current, parse_tree.last_mut().unwrap())
+                    {
+                        Ok(end_of_op) => {
+                            current = end_of_op;
+                            token_begin = current;
                             continue;
                         }
+                        Err(e) => return Err(e),
                     }
+                }
+                _ => {}
+            }
 
-                    // Check for the unary operators.
-                    match expr.chars().nth(index).unwrap() {
-                        '!' => ops.push(Op::Not),
-                        '(' => ops.push(Op::ParenOpen),
-                        ')' => ops.push(Op::ParenClose),
-                        '<' => ops.push(Op::Less),
-                        '>' => ops.push(Op::Greater),
-                        _ => {
-                            return Err(format!("Unknown operator at {}", expr));
-                        }
+            if current_char == ' ' {
+                let token = &template[token_begin..current];
+                if token == "if" {
+                    parse_tree.push(Action::If(Expr { ops: Vec::new() }));
+                } else if token == "while" {
+                    parse_tree.push(Action::While(Expr { ops: Vec::new() }));
+                } else {
+                    Parser::handle_operand(token, parse_tree.last_mut().unwrap());
+                }
+
+                token_begin = current + 1;
+            } else if current_char == '{' {
+                Parser::handle_operand(
+                    &template[token_begin..current],
+                    parse_tree.last_mut().unwrap(),
+                );
+
+                parse_tree.push(Action::Do(Expr { ops: Vec::new() }));
+                token_begin = current + 1;
+            } else if current_char == '}' {
+                Parser::handle_operand(
+                    &template[token_begin..current],
+                    parse_tree.last_mut().unwrap(),
+                );
+
+                parse_tree.push(Action::End());
+                token_begin = current + 1;
+            }
+
+            current += 1;
+        }
+
+        Parser::handle_operand(
+            &template[token_begin..template.len()],
+            parse_tree.last_mut().unwrap(),
+        );
+
+        Ok(Parser { parse_tree })
+    }
+
+    // Returns the next of the end of the string literal.
+    fn handle_string_literal(
+        template: &'a str,
+        start: usize,
+        parse_tree: &mut Vec<Action<'a>>,
+    ) -> Result<usize, String> {
+        assert!(template.chars().nth(start).unwrap() == '"');
+        let string_literal_end;
+
+        // Read until closing " is found.
+        let mut find_end_quote_start = start + 1;
+        loop {
+            match template[find_end_quote_start..].find('"') {
+                Some(end_quote_pos) => {
+                    if end_quote_pos == 0
+                        || template[find_end_quote_start..]
+                            .chars()
+                            .nth(end_quote_pos - 1)
+                            .unwrap()
+                            != '\\'
+                    {
+                        string_literal_end = find_end_quote_start + end_quote_pos;
+                        break;
+                    } else {
+                        find_end_quote_start += end_quote_pos + 1;
                     }
-
-                    expr = &expr[index + 1..]
                 }
                 _ => {
-                    match Expr::parse_operand(expr) {
-                        Some(operand) => ops.push(Op::Operand(operand)),
-                        _ => {
-                            println!("Unable to parse : {}", expr);
-                        }
-                    }
-                    break;
+                    return Err(format!(
+                        "template '{}' does not have terminated \" for string.",
+                        template
+                    ))
                 }
             }
         }
 
-        Ok(Expr { ops })
+        parse_tree
+            .last_mut()
+            .unwrap()
+            .add_op(Op::Operand(Operand::Literal(
+                &template[start + 1..string_literal_end],
+            )));
+
+        Ok(string_literal_end + 1)
     }
 
-    fn parse_operand(mut expr: &str) -> Option<Operand> {
-        expr = expr.trim();
-
-        if expr.is_empty() {
-            return None;
-        }
-
-        let first_char = expr.chars().nth(0).unwrap();
-        if first_char.is_ascii_digit() {
-            if expr.contains('.') {
-                return Some(Operand::Decimal(expr.parse().unwrap_or(0.0)));
-            } else {
-                return Some(Operand::Number(expr.parse().unwrap_or(0)));
+    fn handle_operator(
+        template: &'a str,
+        start: usize,
+        action: &mut Action<'a>,
+    ) -> Result<usize, String> {
+        // Check for the binary operators.
+        if template.len() >= start + 2 {
+            if let Some(op) = check_binary_op(&template[start..start + 2]) {
+                action.add_op(op);
+                return Ok(start + 2);
             }
-        } else if first_char == '"' {
-            return Some(Operand::Literal(&expr[1..expr.len() - 1]));
         }
 
-        Some(Operand::Object(Object { name: expr }))
+        // Check for the unary operators.
+        match template.chars().nth(start).unwrap() {
+            '!' => action.add_op(Op::Not),
+            '(' => action.add_op(Op::ParenOpen),
+            ')' => action.add_op(Op::ParenClose),
+            '<' => action.add_op(Op::Less),
+            '>' => action.add_op(Op::Greater),
+            _ => {
+                return Err(format!("Unknown operator at {}", template));
+            }
+        }
+
+        Ok(start + 1)
     }
 
+    fn handle_operand(mut operand: &'a str, action: &mut Action<'a>) {
+        if operand.is_empty() {
+            return;
+        }
+
+        operand = operand.trim();
+
+        let first_char = operand.chars().nth(0).unwrap();
+        if first_char.is_ascii_digit() {
+            if operand.contains('.') {
+                action.add_op(Op::Operand(Operand::Decimal(
+                    operand.parse().unwrap_or(0.0),
+                )));
+            } else {
+                action.add_op(Op::Operand(Operand::Number(operand.parse().unwrap_or(0))));
+            }
+        } else {
+            action.add_op(Op::Operand(Operand::Object(Object { name: operand })))
+        }
+    }
+}
+
+impl<'a> Expr<'a> {
     fn to_prefix(&mut self) {
         let mut operands = Vec::new();
         let mut operators = Vec::new();
@@ -173,66 +325,91 @@ pub fn operator_num_operands(op: &Op) -> usize {
 
 #[test]
 fn parse_simple_expr_with_binary() {
-    let result = Expr::parse("some == 3");
+    let result = Parser::parse("some == 3");
 
-    let expected_expr = Expr {
-        ops: vec![
-            Op::Operand(Operand::Object(Object { name: "some" })),
-            Op::Equal,
-            Op::Operand(Operand::Number(3)),
-        ],
+    let expected_expr = Parser {
+        parse_tree: vec![Action::Do(Expr {
+            ops: vec![
+                Op::Operand(Operand::Object(Object { name: "some" })),
+                Op::Equal,
+                Op::Operand(Operand::Number(3)),
+            ],
+        })],
     };
     assert_eq!(result.unwrap(), expected_expr);
 }
 
 #[test]
 fn parse_simple_expr_with_unary() {
-    let result = Expr::parse("!some_value");
+    let result = Parser::parse("!some_value");
 
-    let expected_expr = Expr {
-        ops: vec![
-            Op::Not,
-            Op::Operand(Operand::Object(Object { name: "some_value" })),
-        ],
+    let expected_expr = Parser {
+        parse_tree: vec![Action::Do(Expr {
+            ops: vec![
+                Op::Not,
+                Op::Operand(Operand::Object(Object { name: "some_value" })),
+            ],
+        })],
     };
+
     assert_eq!(result.unwrap(), expected_expr);
 }
 
 #[test]
 fn parse_simple_literal() {
-    let result = Expr::parse(r#"some_value == "abc""#);
-
-    let expected_expr = Expr {
-        ops: vec![
-            Op::Operand(Operand::Object(Object { name: "some_value" })),
-            Op::Equal,
-            Op::Operand(Operand::Literal("abc")),
-        ],
+    let result = Parser::parse(r#"some_value == "abc""#);
+    let expected_expr = Parser {
+        parse_tree: vec![Action::Do(Expr {
+            ops: vec![
+                Op::Operand(Operand::Object(Object { name: "some_value" })),
+                Op::Equal,
+                Op::Operand(Operand::Literal("abc")),
+            ],
+        })],
     };
+
+    assert_eq!(result.unwrap(), expected_expr);
+}
+
+#[test]
+fn parse_literal_with_escape() {
+    let result = Parser::parse(r#"some_value == "a\"bc" abc"#);
+    let expected_expr = Parser {
+        parse_tree: vec![Action::Do(Expr {
+            ops: vec![
+                Op::Operand(Operand::Object(Object { name: "some_value" })),
+                Op::Equal,
+                Op::Operand(Operand::Literal("a\\\"bc")),
+                Op::Operand(Operand::Object(Object { name: "abc" })),
+            ],
+        })],
+    };
+
     assert_eq!(result.unwrap(), expected_expr);
 }
 
 #[test]
 fn parse_complex_expr() {
-    let result = Expr::parse("!some_value && ((var1 != var2) || some <= val)");
-
-    let expected_expr = Expr {
-        ops: vec![
-            Op::Not,
-            Op::Operand(Operand::Object(Object { name: "some_value" })),
-            Op::And,
-            Op::ParenOpen,
-            Op::ParenOpen,
-            Op::Operand(Operand::Object(Object { name: "var1" })),
-            Op::NotEqual,
-            Op::Operand(Operand::Object(Object { name: "var2" })),
-            Op::ParenClose,
-            Op::Or,
-            Op::Operand(Operand::Object(Object { name: "some" })),
-            Op::LessEq,
-            Op::Operand(Operand::Object(Object { name: "val" })),
-            Op::ParenClose,
-        ],
+    let result = Parser::parse("!some_value && ((var1 != var2) || some <= val)");
+    let expected_expr = Parser {
+        parse_tree: vec![Action::Do(Expr {
+            ops: vec![
+                Op::Not,
+                Op::Operand(Operand::Object(Object { name: "some_value" })),
+                Op::And,
+                Op::ParenOpen,
+                Op::ParenOpen,
+                Op::Operand(Operand::Object(Object { name: "var1" })),
+                Op::NotEqual,
+                Op::Operand(Operand::Object(Object { name: "var2" })),
+                Op::ParenClose,
+                Op::Or,
+                Op::Operand(Operand::Object(Object { name: "some" })),
+                Op::LessEq,
+                Op::Operand(Operand::Object(Object { name: "val" })),
+                Op::ParenClose,
+            ],
+        })],
     };
 
     assert_eq!(result.unwrap(), expected_expr);
@@ -240,20 +417,109 @@ fn parse_complex_expr() {
 
 #[test]
 fn parse_complex_expr2() {
-    let result = Expr::parse(r"var1 >= var2 && var2 <= var3 || !var3 ");
+    let result = Parser::parse(r"var1 >= var2 && var2 <= var3 || !var3 ");
+    let expected_expr = Parser {
+        parse_tree: vec![Action::Do(Expr {
+            ops: vec![
+                Op::Operand(Operand::Object(Object { name: "var1" })),
+                Op::GreaterEq,
+                Op::Operand(Operand::Object(Object { name: "var2" })),
+                Op::And,
+                Op::Operand(Operand::Object(Object { name: "var2" })),
+                Op::LessEq,
+                Op::Operand(Operand::Object(Object { name: "var3" })),
+                Op::Or,
+                Op::Not,
+                Op::Operand(Operand::Object(Object { name: "var3" })),
+            ],
+        })],
+    };
 
-    let expected_expr = Expr {
-        ops: vec![
-            Op::Operand(Operand::Object(Object { name: "var1" })),
-            Op::GreaterEq,
-            Op::Operand(Operand::Object(Object { name: "var2" })),
-            Op::And,
-            Op::Operand(Operand::Object(Object { name: "var2" })),
-            Op::LessEq,
-            Op::Operand(Operand::Object(Object { name: "var3" })),
-            Op::Or,
-            Op::Not,
-            Op::Operand(Operand::Object(Object { name: "var3" })),
+    assert_eq!(result.unwrap(), expected_expr);
+}
+
+#[test]
+fn parse_if_statement() {
+    let result = Parser::parse(r#"if var1 >= var2 && var3 < "}" { "asdf" }"#);
+    let expected_expr = Parser {
+        parse_tree: vec![
+            Action::Do(Expr { ops: vec![] }),
+            Action::If(Expr {
+                ops: vec![
+                    Op::Operand(Operand::Object(Object { name: "var1" })),
+                    Op::GreaterEq,
+                    Op::Operand(Operand::Object(Object { name: "var2" })),
+                    Op::And,
+                    Op::Operand(Operand::Object(Object { name: "var3" })),
+                    Op::Less,
+                    Op::Operand(Operand::Literal("}")),
+                ],
+            }),
+            Action::Do(Expr {
+                ops: vec![Op::Operand(Operand::Literal("asdf"))],
+            }),
+            Action::End(),
+        ],
+    };
+
+    assert_eq!(result.unwrap(), expected_expr);
+}
+
+#[test]
+fn parse_multiple_if_statement() {
+    let result = Parser::parse(r#"if var1>=var2{if var2>var3{} if !var1 {}}"#);
+    let expected_expr = Parser {
+        parse_tree: vec![
+            Action::Do(Expr { ops: vec![] }),
+            Action::If(Expr {
+                ops: vec![
+                    Op::Operand(Operand::Object(Object { name: "var1" })),
+                    Op::GreaterEq,
+                    Op::Operand(Operand::Object(Object { name: "var2" })),
+                ],
+            }),
+            Action::Do(Expr { ops: vec![] }),
+            Action::If(Expr {
+                ops: vec![
+                    Op::Operand(Operand::Object(Object { name: "var2" })),
+                    Op::Greater,
+                    Op::Operand(Operand::Object(Object { name: "var3" })),
+                ],
+            }),
+            Action::Do(Expr { ops: vec![] }),
+            Action::End(),
+            Action::If(Expr {
+                ops: vec![
+                    Op::Not,
+                    Op::Operand(Operand::Object(Object { name: "var1" })),
+                ],
+            }),
+            Action::Do(Expr { ops: vec![] }),
+            Action::End(),
+            Action::End(),
+        ],
+    };
+
+    assert_eq!(result.unwrap(), expected_expr);
+}
+
+#[test]
+fn parse_while_statement() {
+    let result = Parser::parse(r#"while var1 >= var2{"asdf"}"#);
+    let expected_expr = Parser {
+        parse_tree: vec![
+            Action::Do(Expr { ops: vec![] }),
+            Action::While(Expr {
+                ops: vec![
+                    Op::Operand(Operand::Object(Object { name: "var1" })),
+                    Op::GreaterEq,
+                    Op::Operand(Operand::Object(Object { name: "var2" })),
+                ],
+            }),
+            Action::Do(Expr {
+                ops: vec![Op::Operand(Operand::Literal("asdf"))],
+            }),
+            Action::End(),
         ],
     };
 
