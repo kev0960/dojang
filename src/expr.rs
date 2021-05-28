@@ -50,7 +50,7 @@ impl<'a> Action<'a> {
         match self {
             Action::Show(show) => match show {
                 Show::Expr(e) => e.ops.push(op),
-                _ => panic!(format!("Cannot add op to Show; op {:?}", op)),
+                _ => panic!("Cannot add op to Show; op {:?}", op),
             },
             Action::If(expr) => {
                 expr.ops.push(op);
@@ -61,13 +61,13 @@ impl<'a> Action<'a> {
             Action::Do(expr) => {
                 expr.ops.push(op);
             }
-            _ => panic!(format!("Cannot add op to {:?}; op {:?}", self, op)),
+            _ => panic!("Cannot add op to {:?}; op {:?}", self, op),
         }
     }
 }
 
 #[derive(PartialEq, Debug)]
-enum Show<'a> {
+pub enum Show<'a> {
     Html(&'a str),
     Expr(Expr<'a>),
 }

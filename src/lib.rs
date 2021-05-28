@@ -1,7 +1,6 @@
 mod context;
 mod eval;
 mod expr;
-mod parser;
 
 #[cfg(test)]
 mod tests {
