@@ -1,5 +1,6 @@
 mod context;
 mod eval;
+mod exec;
 mod expr;
 
 #[cfg(test)]

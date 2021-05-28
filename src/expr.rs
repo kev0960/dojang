@@ -36,18 +36,17 @@ pub struct Expr<'a> {
 }
 
 #[derive(PartialEq, Debug)]
-pub enum Action<'a> {
-    Show(Show<'a>),
-    If(Expr<'a>),    // If condition
-    While(Expr<'a>), // Loop condition
-    For(Expr<'a>),   // For condition
-    Else(),          // Else
-    End(),           // Closing }
-    Do(Expr<'a>),
-    Null(),
+pub enum Action<'a, T> {
+    Show(Show<'a, T>),
+    If(T),    // If condition
+    While(T), // Loop condition
+    For(T),   // For condition
+    Else(),   // Else
+    End(),    // Closing }
+    Do(T),
 }
 
-impl<'a> Action<'a> {
+impl<'a> Action<'a, Expr<'a>> {
     pub fn add_op(&mut self, op: Op<'a>) {
         match self {
             Action::Show(show) => match show {
@@ -73,15 +72,15 @@ impl<'a> Action<'a> {
 }
 
 #[derive(PartialEq, Debug)]
-pub enum Show<'a> {
+pub enum Show<'a, T> {
     Html(&'a str),
-    ExprEscaped(Expr<'a>),
-    ExprUnescaped(Expr<'a>),
+    ExprEscaped(T),
+    ExprUnescaped(T),
 }
 
 #[derive(PartialEq, Debug)]
 pub struct Parser<'a> {
-    pub parse_tree: Vec<Action<'a>>,
+    pub parse_tree: Vec<Action<'a, Expr<'a>>>,
 }
 
 impl<'a> Parser<'a> {
@@ -131,7 +130,10 @@ impl<'a> Parser<'a> {
         Ok(Parser { parse_tree })
     }
 
-    fn parse_tag(template: &'a str, parse_tree: &mut Vec<Action<'a>>) -> Result<(), String> {
+    fn parse_tag(
+        template: &'a str,
+        parse_tree: &mut Vec<Action<'a, Expr<'a>>>,
+    ) -> Result<(), String> {
         let mut current = 0;
         let mut token_begin = 0;
 
@@ -198,7 +200,7 @@ impl<'a> Parser<'a> {
     fn handle_string_literal(
         template: &'a str,
         start: usize,
-        parse_tree: &mut Vec<Action<'a>>,
+        parse_tree: &mut Vec<Action<'a, Expr<'a>>>,
     ) -> Result<usize, String> {
         assert!(template.chars().nth(start).unwrap() == '"');
         let string_literal_end;
@@ -243,7 +245,7 @@ impl<'a> Parser<'a> {
     fn handle_operator(
         template: &'a str,
         start: usize,
-        action: &mut Action<'a>,
+        action: &mut Action<'a, Expr<'a>>,
     ) -> Result<usize, String> {
         // Check for the binary operators.
         if template.len() >= start + 2 {
@@ -268,7 +270,7 @@ impl<'a> Parser<'a> {
         Ok(start + 1)
     }
 
-    fn handle_token(token: &'a str, parse_tree: &mut Vec<Action<'a>>) {
+    fn handle_token(token: &'a str, parse_tree: &mut Vec<Action<'a, Expr<'a>>>) {
         if token == "if" {
             parse_tree.push(Action::If(Expr { ops: Vec::new() }));
         } else if token == "while" {
@@ -282,7 +284,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn handle_operand(mut operand: &'a str, action: &mut Action<'a>) {
+    fn handle_operand(mut operand: &'a str, action: &mut Action<'a, Expr<'a>>) {
         if operand.is_empty() {
             return;
         }
