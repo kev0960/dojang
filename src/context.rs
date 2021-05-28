@@ -312,19 +312,19 @@ fn compute_and_test() {
     };
 
     {
-        let eval = Eval::new(get_expr(r"a && b")).unwrap();
+        let eval = Eval::new(get_expr(r"<% a && b %>")).unwrap();
         let result = eval.compute(&context);
 
         assert_eq!(result.unwrap(), Operand::Number(0));
     }
     {
-        let eval = Eval::new(get_expr(r"c && d")).unwrap();
+        let eval = Eval::new(get_expr(r"<% c && d %>")).unwrap();
         let result = eval.compute(&context);
 
         assert_eq!(result.unwrap(), Operand::Number(0));
     }
     {
-        let eval = Eval::new(get_expr(r"c && e")).unwrap();
+        let eval = Eval::new(get_expr(r"<% c && e %>")).unwrap();
         let result = eval.compute(&context);
 
         assert_eq!(result.unwrap(), Operand::Number(1));
@@ -340,19 +340,19 @@ fn compute_or_test() {
     };
 
     {
-        let eval = Eval::new(get_expr(r"(a && b) || (c && e)")).unwrap();
+        let eval = Eval::new(get_expr(r"<% (a && b) || (c && e) %>")).unwrap();
         let result = eval.compute(&context);
 
         assert_eq!(result.unwrap(), Operand::Number(1));
     }
     {
-        let eval = Eval::new(get_expr(r"(a && b) || (c && d)")).unwrap();
+        let eval = Eval::new(get_expr(r"<% (a && b) || (c && d) %>")).unwrap();
         let result = eval.compute(&context);
 
         assert_eq!(result.unwrap(), Operand::Number(0));
     }
     {
-        let eval = Eval::new(get_expr(r"c || e")).unwrap();
+        let eval = Eval::new(get_expr(r"<% c || e %>")).unwrap();
         let result = eval.compute(&context);
 
         assert_eq!(result.unwrap(), Operand::Number(1));
@@ -368,20 +368,20 @@ fn compute_complex() {
     };
 
     {
-        let eval = Eval::new(get_expr(r"!a && ((b != a) || c <= e)")).unwrap();
+        let eval = Eval::new(get_expr(r"<% !a && ((b != a) || c <= e) %>")).unwrap();
         let result = eval.compute(&context);
 
         assert_eq!(result.unwrap(), Operand::Number(0));
     }
     {
-        let eval = Eval::new(get_expr(r"!b && ((b != a) || c <= e && !d)")).unwrap();
+        let eval = Eval::new(get_expr(r"<% !b && ((b != a) || c <= e && !d) %>")).unwrap();
         let result = eval.compute(&context);
 
         assert_eq!(result.unwrap(), Operand::Number(1));
     }
     {
         let eval = Eval::new(get_expr(
-            r#"(a == 1) && (b == 0) && (c == "abc") && !d && e == "def""#,
+            r#"<% (a == 1) && (b == 0) && (c == "abc") && !d && e == "def" %>"#,
         ))
         .unwrap();
         let result = eval.compute(&context);

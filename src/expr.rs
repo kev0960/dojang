@@ -40,6 +40,8 @@ pub enum Action<'a> {
     Show(Show<'a>),
     If(Expr<'a>),    // If condition
     While(Expr<'a>), // Loop condition
+    For(Expr<'a>),   // For condition
+    Else(),          // Else
     End(),           // Closing }
     Do(Expr<'a>),
     Null(),
@@ -49,13 +51,17 @@ impl<'a> Action<'a> {
     pub fn add_op(&mut self, op: Op<'a>) {
         match self {
             Action::Show(show) => match show {
-                Show::Expr(e) => e.ops.push(op),
+                Show::ExprEscaped(e) => e.ops.push(op),
+                Show::ExprUnescaped(e) => e.ops.push(op),
                 _ => panic!("Cannot add op to Show; op {:?}", op),
             },
             Action::If(expr) => {
                 expr.ops.push(op);
             }
             Action::While(expr) => {
+                expr.ops.push(op);
+            }
+            Action::For(expr) => {
                 expr.ops.push(op);
             }
             Action::Do(expr) => {
@@ -69,7 +75,8 @@ impl<'a> Action<'a> {
 #[derive(PartialEq, Debug)]
 pub enum Show<'a> {
     Html(&'a str),
-    Expr(Expr<'a>),
+    ExprEscaped(Expr<'a>),
+    ExprUnescaped(Expr<'a>),
 }
 
 #[derive(PartialEq, Debug)]
@@ -78,19 +85,62 @@ pub struct Parser<'a> {
 }
 
 impl<'a> Parser<'a> {
-    pub fn parse(template: &'a str) -> Result<Self, String> {
+    pub fn parse(mut template: &'a str) -> Result<Self, String> {
+        let mut parse_tree = Vec::new();
+        while !template.is_empty() {
+            match template.find("<%") {
+                Some(tag_start) => {
+                    let before_tag = &template[..tag_start];
+                    if !before_tag.is_empty() {
+                        parse_tree.push(Action::Show(Show::Html(before_tag)));
+                    }
+
+                    let after_tag = &template[tag_start + 2..];
+                    match after_tag.find("%>") {
+                        Some(tag_end) => {
+                            match template.chars().nth(tag_start + 1).unwrap() {
+                                '=' => parse_tree.push(Action::Show(Show::ExprEscaped(Expr {
+                                    ops: Vec::new(),
+                                }))),
+                                '-' => parse_tree.push(Action::Show(Show::ExprUnescaped(Expr {
+                                    ops: Vec::new(),
+                                }))),
+                                _ => parse_tree.push(Action::Do(Expr { ops: Vec::new() })),
+                            }
+
+                            match Parser::parse_tag(&after_tag[..tag_end], &mut parse_tree) {
+                                Err(s) => {
+                                    return Err(s);
+                                }
+                                _ => {}
+                            }
+                            template = &after_tag[tag_end + 2..];
+                        }
+                        _ => {
+                            return Err("Unmatched %> tag found".to_string());
+                        }
+                    }
+                }
+                _ => {
+                    parse_tree.push(Action::Show(Show::Html(template)));
+                    break;
+                }
+            }
+        }
+
+        Ok(Parser { parse_tree })
+    }
+
+    fn parse_tag(template: &'a str, parse_tree: &mut Vec<Action<'a>>) -> Result<(), String> {
         let mut current = 0;
         let mut token_begin = 0;
-
-        let mut parse_tree = Vec::new();
-        parse_tree.push(Action::Do(Expr { ops: Vec::new() }));
 
         while current < template.len() {
             let current_char = template.chars().nth(current).unwrap();
 
             // Check string literal.
             if current_char == '"' {
-                match Parser::handle_string_literal(template, current, &mut parse_tree) {
+                match Parser::handle_string_literal(template, current, parse_tree) {
                     Ok(end_of_literal) => {
                         current = end_of_literal;
                         token_begin = current;
@@ -124,29 +174,15 @@ impl<'a> Parser<'a> {
 
             if current_char == ' ' {
                 let token = &template[token_begin..current];
-                if token == "if" {
-                    parse_tree.push(Action::If(Expr { ops: Vec::new() }));
-                } else if token == "while" {
-                    parse_tree.push(Action::While(Expr { ops: Vec::new() }));
-                } else {
-                    Parser::handle_operand(token, parse_tree.last_mut().unwrap());
-                }
+                Parser::handle_token(token, parse_tree);
 
                 token_begin = current + 1;
             } else if current_char == '{' {
-                Parser::handle_operand(
-                    &template[token_begin..current],
-                    parse_tree.last_mut().unwrap(),
-                );
-
+                Parser::handle_token(&template[token_begin..current], parse_tree);
                 parse_tree.push(Action::Do(Expr { ops: Vec::new() }));
                 token_begin = current + 1;
             } else if current_char == '}' {
-                Parser::handle_operand(
-                    &template[token_begin..current],
-                    parse_tree.last_mut().unwrap(),
-                );
-
+                Parser::handle_token(&template[token_begin..current], parse_tree);
                 parse_tree.push(Action::End());
                 token_begin = current + 1;
             }
@@ -154,12 +190,8 @@ impl<'a> Parser<'a> {
             current += 1;
         }
 
-        Parser::handle_operand(
-            &template[token_begin..template.len()],
-            parse_tree.last_mut().unwrap(),
-        );
-
-        Ok(Parser { parse_tree })
+        Parser::handle_token(&template[token_begin..template.len()], parse_tree);
+        Ok(())
     }
 
     // Returns the next of the end of the string literal.
@@ -236,6 +268,20 @@ impl<'a> Parser<'a> {
         Ok(start + 1)
     }
 
+    fn handle_token(token: &'a str, parse_tree: &mut Vec<Action<'a>>) {
+        if token == "if" {
+            parse_tree.push(Action::If(Expr { ops: Vec::new() }));
+        } else if token == "while" {
+            parse_tree.push(Action::While(Expr { ops: Vec::new() }));
+        } else if token == "for" {
+            parse_tree.push(Action::For(Expr { ops: Vec::new() }));
+        } else if token == "else" {
+            parse_tree.push(Action::Else());
+        } else {
+            Parser::handle_operand(token, parse_tree.last_mut().unwrap());
+        }
+    }
+
     fn handle_operand(mut operand: &'a str, action: &mut Action<'a>) {
         if operand.is_empty() {
             return;
@@ -254,22 +300,6 @@ impl<'a> Parser<'a> {
             }
         } else {
             action.add_op(Op::Operand(Operand::Object(Object { name: operand })))
-        }
-    }
-}
-
-impl<'a> Expr<'a> {
-    fn to_prefix(&mut self) {
-        let mut operands = Vec::new();
-        let mut operators = Vec::new();
-
-        for op in &self.ops {
-            match op {
-                Op::Operand(operand) => {
-                    operands.push(operand);
-                }
-                operator => operators.push(operator),
-            }
         }
     }
 }
@@ -325,7 +355,7 @@ pub fn operator_num_operands(op: &Op) -> usize {
 
 #[test]
 fn parse_simple_expr_with_binary() {
-    let result = Parser::parse("some == 3");
+    let result = Parser::parse("<% some == 3 %>");
 
     let expected_expr = Parser {
         parse_tree: vec![Action::Do(Expr {
@@ -341,7 +371,7 @@ fn parse_simple_expr_with_binary() {
 
 #[test]
 fn parse_simple_expr_with_unary() {
-    let result = Parser::parse("!some_value");
+    let result = Parser::parse("<% !some_value %>");
 
     let expected_expr = Parser {
         parse_tree: vec![Action::Do(Expr {
@@ -357,7 +387,7 @@ fn parse_simple_expr_with_unary() {
 
 #[test]
 fn parse_simple_literal() {
-    let result = Parser::parse(r#"some_value == "abc""#);
+    let result = Parser::parse(r#"<% some_value == "abc" %>"#);
     let expected_expr = Parser {
         parse_tree: vec![Action::Do(Expr {
             ops: vec![
@@ -373,7 +403,7 @@ fn parse_simple_literal() {
 
 #[test]
 fn parse_literal_with_escape() {
-    let result = Parser::parse(r#"some_value == "a\"bc" abc"#);
+    let result = Parser::parse(r#"<% some_value == "a\"bc" abc %>"#);
     let expected_expr = Parser {
         parse_tree: vec![Action::Do(Expr {
             ops: vec![
@@ -390,7 +420,7 @@ fn parse_literal_with_escape() {
 
 #[test]
 fn parse_complex_expr() {
-    let result = Parser::parse("!some_value && ((var1 != var2) || some <= val)");
+    let result = Parser::parse("<% !some_value && ((var1 != var2) || some <= val) %>");
     let expected_expr = Parser {
         parse_tree: vec![Action::Do(Expr {
             ops: vec![
@@ -417,7 +447,7 @@ fn parse_complex_expr() {
 
 #[test]
 fn parse_complex_expr2() {
-    let result = Parser::parse(r"var1 >= var2 && var2 <= var3 || !var3 ");
+    let result = Parser::parse(r"<% var1 >= var2 && var2 <= var3 || !var3  %>");
     let expected_expr = Parser {
         parse_tree: vec![Action::Do(Expr {
             ops: vec![
@@ -440,7 +470,7 @@ fn parse_complex_expr2() {
 
 #[test]
 fn parse_if_statement() {
-    let result = Parser::parse(r#"if var1 >= var2 && var3 < "}" { "asdf" }"#);
+    let result = Parser::parse(r#"<% if var1 >= var2 && var3 < "}" { "hello" } %>"#);
     let expected_expr = Parser {
         parse_tree: vec![
             Action::Do(Expr { ops: vec![] }),
@@ -456,7 +486,7 @@ fn parse_if_statement() {
                 ],
             }),
             Action::Do(Expr {
-                ops: vec![Op::Operand(Operand::Literal("asdf"))],
+                ops: vec![Op::Operand(Operand::Literal("hello"))],
             }),
             Action::End(),
         ],
@@ -467,7 +497,7 @@ fn parse_if_statement() {
 
 #[test]
 fn parse_multiple_if_statement() {
-    let result = Parser::parse(r#"if var1>=var2{if var2>var3{} if !var1 {}}"#);
+    let result = Parser::parse(r#"<% if var1>=var2{if var2>var3{} if !var1 {}} %>"#);
     let expected_expr = Parser {
         parse_tree: vec![
             Action::Do(Expr { ops: vec![] }),
@@ -504,8 +534,48 @@ fn parse_multiple_if_statement() {
 }
 
 #[test]
+fn parse_if_else_statement() {
+    let result = Parser::parse(r#"<% if var1>=var2{ "b" } else if var1==3{"a"}else{"c"}%>"#);
+    let expected_expr = Parser {
+        parse_tree: vec![
+            Action::Do(Expr { ops: vec![] }),
+            Action::If(Expr {
+                ops: vec![
+                    Op::Operand(Operand::Object(Object { name: "var1" })),
+                    Op::GreaterEq,
+                    Op::Operand(Operand::Object(Object { name: "var2" })),
+                ],
+            }),
+            Action::Do(Expr {
+                ops: vec![Op::Operand(Operand::Literal("b"))],
+            }),
+            Action::End(),
+            Action::Else(),
+            Action::If(Expr {
+                ops: vec![
+                    Op::Operand(Operand::Object(Object { name: "var1" })),
+                    Op::Equal,
+                    Op::Operand(Operand::Number(3)),
+                ],
+            }),
+            Action::Do(Expr {
+                ops: vec![Op::Operand(Operand::Literal("a"))],
+            }),
+            Action::End(),
+            Action::Else(),
+            Action::Do(Expr {
+                ops: vec![Op::Operand(Operand::Literal("c"))],
+            }),
+            Action::End(),
+        ],
+    };
+
+    assert_eq!(result.unwrap(), expected_expr);
+}
+
+#[test]
 fn parse_while_statement() {
-    let result = Parser::parse(r#"while var1 >= var2{"asdf"}"#);
+    let result = Parser::parse(r#"<% while var1 >= var2{ "hello"} %>"#);
     let expected_expr = Parser {
         parse_tree: vec![
             Action::Do(Expr { ops: vec![] }),
@@ -517,7 +587,30 @@ fn parse_while_statement() {
                 ],
             }),
             Action::Do(Expr {
-                ops: vec![Op::Operand(Operand::Literal("asdf"))],
+                ops: vec![Op::Operand(Operand::Literal("hello"))],
+            }),
+            Action::End(),
+        ],
+    };
+
+    assert_eq!(result.unwrap(), expected_expr);
+}
+
+#[test]
+fn parse_for_statement() {
+    let result = Parser::parse(r#"<% for a in vec{ "hello"} %>"#);
+    let expected_expr = Parser {
+        parse_tree: vec![
+            Action::Do(Expr { ops: vec![] }),
+            Action::For(Expr {
+                ops: vec![
+                    Op::Operand(Operand::Object(Object { name: "a" })),
+                    Op::Operand(Operand::Object(Object { name: "in" })),
+                    Op::Operand(Operand::Object(Object { name: "vec" })),
+                ],
+            }),
+            Action::Do(Expr {
+                ops: vec![Op::Operand(Operand::Literal("hello"))],
             }),
             Action::End(),
         ],
