@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, HashMap};
 
 // The executer that renders the template.
 pub struct Executer<'a> {
-    insts: Vec<Action<'a, Eval<'a>>>,
+    insts: Vec<Action<'a, Eval>>,
 
     // Tells where the instructor point to jump
     // - For, If, While: Tells where to jump if the condition is false.
@@ -32,9 +32,7 @@ impl<'a> Executer<'a> {
         })
     }
 
-    fn compute_jump_table(
-        insts: &Vec<Action<'a, Eval<'a>>>,
-    ) -> Result<HashMap<usize, usize>, String> {
+    fn compute_jump_table(insts: &Vec<Action<'a, Eval>>) -> Result<HashMap<usize, usize>, String> {
         let mut inst_index = 0;
 
         let mut jump_table = HashMap::new();
@@ -192,7 +190,7 @@ impl<'a> Executer<'a> {
     }
 }
 
-fn convert_expr_to_eval<'a>(action: Action<'a, Expr<'a>>) -> Result<Action<'a, Eval<'a>>, String> {
+fn convert_expr_to_eval<'a>(action: Action<'a, Expr>) -> Result<Action<'a, Eval>, String> {
     match action {
         Action::Show(show) => match show {
             Show::Html(html) => Ok(Action::Show(Show::Html(html))),

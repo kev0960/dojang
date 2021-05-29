@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 #[derive(PartialEq, Debug)]
-pub enum Op<'a> {
+pub enum Op {
     Not,        // !
     Or,         // ||
     And,        // &&
@@ -14,27 +14,26 @@ pub enum Op<'a> {
     Greater,    // >
     GreaterEq,  // >=,
     Assign,     // =
-    Operand(Operand<'a>),
+    Operand(Operand),
 }
 
 #[derive(PartialEq, Debug, Clone)]
-pub enum Operand<'a> {
-    Literal(&'a str),
-    StringLiteral(String),
+pub enum Operand {
+    Literal(String),
     Number(i64),
     Decimal(f64),
-    Object(Object<'a>),
+    Object(Object),
 }
 
 // Name that will be found in the execution context.
 #[derive(PartialEq, Debug, Clone)]
-pub struct Object<'a> {
-    pub name: &'a str,
+pub struct Object {
+    pub name: String,
 }
 
 #[derive(PartialEq, Debug)]
-pub struct Expr<'a> {
-    pub ops: Vec<Op<'a>>,
+pub struct Expr {
+    pub ops: Vec<Op>,
 }
 
 #[derive(PartialEq, Debug)]
@@ -48,8 +47,8 @@ pub enum Action<'a, T> {
     Do(T),
 }
 
-impl<'a> Action<'a, Expr<'a>> {
-    pub fn add_op(&mut self, op: Op<'a>) {
+impl<'a> Action<'a, Expr> {
+    pub fn add_op(&mut self, op: Op) {
         match self {
             Action::Show(show) => match show {
                 Show::ExprEscaped(e) => e.ops.push(op),
@@ -82,7 +81,7 @@ pub enum Show<'a, T> {
 
 #[derive(PartialEq, Debug)]
 pub struct Parser<'a> {
-    pub parse_tree: Vec<Action<'a, Expr<'a>>>,
+    pub parse_tree: Vec<Action<'a, Expr>>,
 }
 
 impl<'a> Parser<'a> {
@@ -142,10 +141,7 @@ impl<'a> Parser<'a> {
         Ok(Parser { parse_tree })
     }
 
-    fn parse_tag(
-        template: &'a str,
-        parse_tree: &mut Vec<Action<'a, Expr<'a>>>,
-    ) -> Result<(), String> {
+    fn parse_tag(template: &'a str, parse_tree: &mut Vec<Action<'a, Expr>>) -> Result<(), String> {
         let mut current = 0;
         let mut token_begin = 0;
 
@@ -212,7 +208,7 @@ impl<'a> Parser<'a> {
     fn handle_string_literal(
         template: &'a str,
         start: usize,
-        parse_tree: &mut Vec<Action<'a, Expr<'a>>>,
+        parse_tree: &mut Vec<Action<'a, Expr>>,
     ) -> Result<usize, String> {
         assert!(template.chars().nth(start).unwrap() == '"');
         let string_literal_end;
@@ -248,7 +244,7 @@ impl<'a> Parser<'a> {
             .last_mut()
             .unwrap()
             .add_op(Op::Operand(Operand::Literal(
-                &template[start + 1..string_literal_end],
+                template[start + 1..string_literal_end].to_string(),
             )));
 
         Ok(string_literal_end + 1)
@@ -257,7 +253,7 @@ impl<'a> Parser<'a> {
     fn handle_operator(
         template: &'a str,
         start: usize,
-        action: &mut Action<'a, Expr<'a>>,
+        action: &mut Action<'a, Expr>,
     ) -> Result<usize, String> {
         // Check for the binary operators.
         if template.len() >= start + 2 {
@@ -286,7 +282,7 @@ impl<'a> Parser<'a> {
         Ok(start + 1)
     }
 
-    fn handle_token(token: &'a str, parse_tree: &mut Vec<Action<'a, Expr<'a>>>) {
+    fn handle_token(token: &'a str, parse_tree: &mut Vec<Action<'a, Expr>>) {
         if token == "if" {
             parse_tree.push(Action::If(Expr { ops: Vec::new() }));
         } else if token == "while" {
@@ -300,7 +296,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn handle_operand(mut operand: &'a str, action: &mut Action<'a, Expr<'a>>) {
+    fn handle_operand(mut operand: &'a str, action: &mut Action<'a, Expr>) {
         if operand.is_empty() {
             return;
         }
@@ -317,7 +313,9 @@ impl<'a> Parser<'a> {
                 action.add_op(Op::Operand(Operand::Number(operand.parse().unwrap_or(0))));
             }
         } else {
-            action.add_op(Op::Operand(Operand::Object(Object { name: operand })))
+            action.add_op(Op::Operand(Operand::Object(Object {
+                name: operand.to_string(),
+            })))
         }
     }
 }
@@ -379,7 +377,9 @@ fn parse_simple_expr_with_binary() {
     let expected_expr = Parser {
         parse_tree: vec![Action::Do(Expr {
             ops: vec![
-                Op::Operand(Operand::Object(Object { name: "some" })),
+                Op::Operand(Operand::Object(Object {
+                    name: "some".to_string(),
+                })),
                 Op::Equal,
                 Op::Operand(Operand::Number(3)),
             ],
@@ -396,7 +396,9 @@ fn parse_simple_expr_with_unary() {
         parse_tree: vec![Action::Do(Expr {
             ops: vec![
                 Op::Not,
-                Op::Operand(Operand::Object(Object { name: "some_value" })),
+                Op::Operand(Operand::Object(Object {
+                    name: "some_value".to_string(),
+                })),
             ],
         })],
     };
@@ -410,9 +412,11 @@ fn parse_simple_literal() {
     let expected_expr = Parser {
         parse_tree: vec![Action::Do(Expr {
             ops: vec![
-                Op::Operand(Operand::Object(Object { name: "some_value" })),
+                Op::Operand(Operand::Object(Object {
+                    name: "some_value".to_string(),
+                })),
                 Op::Equal,
-                Op::Operand(Operand::Literal("abc")),
+                Op::Operand(Operand::Literal("abc".to_string())),
             ],
         })],
     };
@@ -426,10 +430,14 @@ fn parse_literal_with_escape() {
     let expected_expr = Parser {
         parse_tree: vec![Action::Do(Expr {
             ops: vec![
-                Op::Operand(Operand::Object(Object { name: "some_value" })),
+                Op::Operand(Operand::Object(Object {
+                    name: "some_value".to_string(),
+                })),
                 Op::Equal,
-                Op::Operand(Operand::Literal("a\\\"bc")),
-                Op::Operand(Operand::Object(Object { name: "abc" })),
+                Op::Operand(Operand::Literal("a\\\"bc".to_string())),
+                Op::Operand(Operand::Object(Object {
+                    name: "abc".to_string(),
+                })),
             ],
         })],
     };
@@ -444,18 +452,28 @@ fn parse_complex_expr() {
         parse_tree: vec![Action::Do(Expr {
             ops: vec![
                 Op::Not,
-                Op::Operand(Operand::Object(Object { name: "some_value" })),
+                Op::Operand(Operand::Object(Object {
+                    name: "some_value".to_string(),
+                })),
                 Op::And,
                 Op::ParenOpen,
                 Op::ParenOpen,
-                Op::Operand(Operand::Object(Object { name: "var1" })),
+                Op::Operand(Operand::Object(Object {
+                    name: "var1".to_string(),
+                })),
                 Op::NotEqual,
-                Op::Operand(Operand::Object(Object { name: "var2" })),
+                Op::Operand(Operand::Object(Object {
+                    name: "var2".to_string(),
+                })),
                 Op::ParenClose,
                 Op::Or,
-                Op::Operand(Operand::Object(Object { name: "some" })),
+                Op::Operand(Operand::Object(Object {
+                    name: "some".to_string(),
+                })),
                 Op::LessEq,
-                Op::Operand(Operand::Object(Object { name: "val" })),
+                Op::Operand(Operand::Object(Object {
+                    name: "val".to_string(),
+                })),
                 Op::ParenClose,
             ],
         })],
@@ -470,16 +488,26 @@ fn parse_complex_expr2() {
     let expected_expr = Parser {
         parse_tree: vec![Action::Do(Expr {
             ops: vec![
-                Op::Operand(Operand::Object(Object { name: "var1" })),
+                Op::Operand(Operand::Object(Object {
+                    name: "var1".to_string(),
+                })),
                 Op::GreaterEq,
-                Op::Operand(Operand::Object(Object { name: "var2" })),
+                Op::Operand(Operand::Object(Object {
+                    name: "var2".to_string(),
+                })),
                 Op::And,
-                Op::Operand(Operand::Object(Object { name: "var2" })),
+                Op::Operand(Operand::Object(Object {
+                    name: "var2".to_string(),
+                })),
                 Op::LessEq,
-                Op::Operand(Operand::Object(Object { name: "var3" })),
+                Op::Operand(Operand::Object(Object {
+                    name: "var3".to_string(),
+                })),
                 Op::Or,
                 Op::Not,
-                Op::Operand(Operand::Object(Object { name: "var3" })),
+                Op::Operand(Operand::Object(Object {
+                    name: "var3".to_string(),
+                })),
             ],
         })],
     };
@@ -495,17 +523,23 @@ fn parse_if_statement() {
             Action::Do(Expr { ops: vec![] }),
             Action::If(Expr {
                 ops: vec![
-                    Op::Operand(Operand::Object(Object { name: "var1" })),
+                    Op::Operand(Operand::Object(Object {
+                        name: "var1".to_string(),
+                    })),
                     Op::GreaterEq,
-                    Op::Operand(Operand::Object(Object { name: "var2" })),
+                    Op::Operand(Operand::Object(Object {
+                        name: "var2".to_string(),
+                    })),
                     Op::And,
-                    Op::Operand(Operand::Object(Object { name: "var3" })),
+                    Op::Operand(Operand::Object(Object {
+                        name: "var3".to_string(),
+                    })),
                     Op::Less,
-                    Op::Operand(Operand::Literal("}")),
+                    Op::Operand(Operand::Literal("}".to_string())),
                 ],
             }),
             Action::Do(Expr {
-                ops: vec![Op::Operand(Operand::Literal("hello"))],
+                ops: vec![Op::Operand(Operand::Literal("hello".to_string()))],
             }),
             Action::End(),
         ],
@@ -522,17 +556,25 @@ fn parse_multiple_if_statement() {
             Action::Do(Expr { ops: vec![] }),
             Action::If(Expr {
                 ops: vec![
-                    Op::Operand(Operand::Object(Object { name: "var1" })),
+                    Op::Operand(Operand::Object(Object {
+                        name: "var1".to_string(),
+                    })),
                     Op::GreaterEq,
-                    Op::Operand(Operand::Object(Object { name: "var2" })),
+                    Op::Operand(Operand::Object(Object {
+                        name: "var2".to_string(),
+                    })),
                 ],
             }),
             Action::Do(Expr { ops: vec![] }),
             Action::If(Expr {
                 ops: vec![
-                    Op::Operand(Operand::Object(Object { name: "var2" })),
+                    Op::Operand(Operand::Object(Object {
+                        name: "var2".to_string(),
+                    })),
                     Op::Greater,
-                    Op::Operand(Operand::Object(Object { name: "var3" })),
+                    Op::Operand(Operand::Object(Object {
+                        name: "var3".to_string(),
+                    })),
                 ],
             }),
             Action::Do(Expr { ops: vec![] }),
@@ -540,7 +582,9 @@ fn parse_multiple_if_statement() {
             Action::If(Expr {
                 ops: vec![
                     Op::Not,
-                    Op::Operand(Operand::Object(Object { name: "var1" })),
+                    Op::Operand(Operand::Object(Object {
+                        name: "var1".to_string(),
+                    })),
                 ],
             }),
             Action::Do(Expr { ops: vec![] }),
@@ -560,30 +604,36 @@ fn parse_if_else_statement() {
             Action::Do(Expr { ops: vec![] }),
             Action::If(Expr {
                 ops: vec![
-                    Op::Operand(Operand::Object(Object { name: "var1" })),
+                    Op::Operand(Operand::Object(Object {
+                        name: "var1".to_string(),
+                    })),
                     Op::GreaterEq,
-                    Op::Operand(Operand::Object(Object { name: "var2" })),
+                    Op::Operand(Operand::Object(Object {
+                        name: "var2".to_string(),
+                    })),
                 ],
             }),
             Action::Do(Expr {
-                ops: vec![Op::Operand(Operand::Literal("b"))],
+                ops: vec![Op::Operand(Operand::Literal("b".to_string()))],
             }),
             Action::End(),
             Action::Else(),
             Action::If(Expr {
                 ops: vec![
-                    Op::Operand(Operand::Object(Object { name: "var1" })),
+                    Op::Operand(Operand::Object(Object {
+                        name: "var1".to_string(),
+                    })),
                     Op::Equal,
                     Op::Operand(Operand::Number(3)),
                 ],
             }),
             Action::Do(Expr {
-                ops: vec![Op::Operand(Operand::Literal("a"))],
+                ops: vec![Op::Operand(Operand::Literal("a".to_string()))],
             }),
             Action::End(),
             Action::Else(),
             Action::Do(Expr {
-                ops: vec![Op::Operand(Operand::Literal("c"))],
+                ops: vec![Op::Operand(Operand::Literal("c".to_string()))],
             }),
             Action::End(),
         ],
@@ -600,13 +650,17 @@ fn parse_while_statement() {
             Action::Do(Expr { ops: vec![] }),
             Action::While(Expr {
                 ops: vec![
-                    Op::Operand(Operand::Object(Object { name: "var1" })),
+                    Op::Operand(Operand::Object(Object {
+                        name: "var1".to_string(),
+                    })),
                     Op::GreaterEq,
-                    Op::Operand(Operand::Object(Object { name: "var2" })),
+                    Op::Operand(Operand::Object(Object {
+                        name: "var2".to_string(),
+                    })),
                 ],
             }),
             Action::Do(Expr {
-                ops: vec![Op::Operand(Operand::Literal("hello"))],
+                ops: vec![Op::Operand(Operand::Literal("hello".to_string()))],
             }),
             Action::End(),
         ],
@@ -623,13 +677,19 @@ fn parse_for_statement() {
             Action::Do(Expr { ops: vec![] }),
             Action::For(Expr {
                 ops: vec![
-                    Op::Operand(Operand::Object(Object { name: "a" })),
-                    Op::Operand(Operand::Object(Object { name: "in" })),
-                    Op::Operand(Operand::Object(Object { name: "vec" })),
+                    Op::Operand(Operand::Object(Object {
+                        name: "a".to_string(),
+                    })),
+                    Op::Operand(Operand::Object(Object {
+                        name: "in".to_string(),
+                    })),
+                    Op::Operand(Operand::Object(Object {
+                        name: "vec".to_string(),
+                    })),
                 ],
             }),
             Action::Do(Expr {
-                ops: vec![Op::Operand(Operand::Literal("hello"))],
+                ops: vec![Op::Operand(Operand::Literal("hello".to_string()))],
             }),
             Action::End(),
         ],
@@ -646,7 +706,9 @@ fn parse_tags_simple() {
             Action::Show(Show::Html("<html>")),
             Action::Do(Expr { ops: vec![] }),
             Action::If(Expr {
-                ops: vec![Op::Operand(Operand::Object(Object { name: "a" }))],
+                ops: vec![Op::Operand(Operand::Object(Object {
+                    name: "a".to_string(),
+                }))],
             }),
             Action::Do(Expr { ops: vec![] }),
             Action::Show(Show::Html("some tag")),
@@ -666,11 +728,15 @@ fn parse_tags_escaped() {
             Action::Show(Show::Html("<html>")),
             Action::Do(Expr { ops: vec![] }),
             Action::If(Expr {
-                ops: vec![Op::Operand(Operand::Object(Object { name: "a" }))],
+                ops: vec![Op::Operand(Operand::Object(Object {
+                    name: "a".to_string(),
+                }))],
             }),
             Action::Do(Expr { ops: vec![] }),
             Action::Show(Show::ExprEscaped(Expr {
-                ops: vec![Op::Operand(Operand::Object(Object { name: "data" }))],
+                ops: vec![Op::Operand(Operand::Object(Object {
+                    name: "data".to_string(),
+                }))],
             })),
             Action::Do(Expr { ops: vec![] }),
             Action::End(),

@@ -38,11 +38,11 @@ impl Context {
 }
 
 pub trait ComputeExpr<'a> {
-    fn run(&self, context: &'a mut Context) -> Result<Operand<'a>, String>;
+    fn run(&self, context: &'a mut Context) -> Result<Operand, String>;
 }
 
-impl<'a> ComputeExpr<'a> for Eval<'a> {
-    fn run(&self, context: &'a mut Context) -> Result<Operand<'a>, String> {
+impl<'a> ComputeExpr<'a> for Eval {
+    fn run(&self, context: &'a mut Context) -> Result<Operand, String> {
         let mut operands: Vec<Operand> = Vec::new();
 
         for op in self.expr.iter().rev() {
@@ -90,7 +90,7 @@ impl<'a> ComputeExpr<'a> for Eval<'a> {
         }
 
         match operands.pop().unwrap() {
-            Operand::Object(obj) => Ok(convert_value_to_operand(context.get_value(obj.name)?)),
+            Operand::Object(obj) => Ok(convert_value_to_operand(context.get_value(&obj.name)?)),
             operand => Ok(operand),
         }
     }
@@ -101,7 +101,7 @@ pub trait Convert {
     fn to_str(&self) -> String;
 }
 
-impl<'a> Convert for Operand<'a> {
+impl Convert for Operand {
     fn is_true(&self) -> bool {
         match &self {
             Operand::Literal(l) => !l.is_empty(),
@@ -128,21 +128,21 @@ impl<'a> Convert for Operand<'a> {
 trait ComputeOp {
     fn compute_binary<'a>(
         &self,
-        context: &'a Context,
+        context: &'a mut Context,
         left: Operand,
         right: Operand,
-    ) -> Result<Operand<'a>, String>;
+    ) -> Result<Operand, String>;
 
-    fn compute_unary<'a>(&self, context: &'a Context, op: Operand) -> Result<Operand<'a>, String>;
+    fn compute_unary<'a>(&self, context: &'a Context, op: Operand) -> Result<Operand, String>;
 }
 
-impl<'b> ComputeOp for Op<'b> {
+impl ComputeOp for Op {
     fn compute_binary<'a>(
         &self,
-        context: &'a Context,
+        context: &'a mut Context,
         left: Operand,
         right: Operand,
-    ) -> Result<Operand<'a>, String> {
+    ) -> Result<Operand, String> {
         match self {
             Op::And => return compute_binary(context, left, right, compute_and),
             Op::Or => return compute_binary(context, left, right, compute_or),
@@ -158,7 +158,7 @@ impl<'b> ComputeOp for Op<'b> {
         panic!("Binary {:?} is not implemented", self);
     }
 
-    fn compute_unary<'a>(&self, context: &'a Context, op: Operand) -> Result<Operand<'a>, String> {
+    fn compute_unary<'a>(&self, context: &'a Context, op: Operand) -> Result<Operand, String> {
         match self {
             Op::Not => return compute_unary(context, op, compute_not),
             _ => {}
@@ -178,7 +178,7 @@ fn convert_value_to_operand(value: &Value) -> Operand {
                 Operand::Decimal(n.as_f64().unwrap())
             }
         }
-        Value::String(s) => Operand::Literal(s),
+        Value::String(s) => Operand::Literal(s.clone()),
         _ => {
             panic!("This should not happen")
         }
@@ -189,12 +189,12 @@ fn compute_unary<'a, ComputeFunc>(
     context: &'a Context,
     op: Operand,
     compute_func: ComputeFunc,
-) -> Result<Operand<'a>, String>
+) -> Result<Operand, String>
 where
-    ComputeFunc: Fn(Operand) -> Result<Operand<'a>, String>,
+    ComputeFunc: Fn(Operand) -> Result<Operand, String>,
 {
     if let Operand::Object(obj) = op {
-        match context.get_value(obj.name) {
+        match context.get_value(&obj.name) {
             Ok(v) => {
                 return compute_unary(context, convert_value_to_operand(v), compute_func);
             }
@@ -212,12 +212,12 @@ fn compute_binary<'a, ComputeFunc>(
     left: Operand,
     right: Operand,
     compute_func: ComputeFunc,
-) -> Result<Operand<'a>, String>
+) -> Result<Operand, String>
 where
-    ComputeFunc: Fn(Operand, Operand) -> Result<Operand<'a>, String>,
+    ComputeFunc: Fn(Operand, Operand) -> Result<Operand, String>,
 {
     if let Operand::Object(l) = left {
-        match context.get_value(l.name) {
+        match context.get_value(&l.name) {
             Ok(v) => {
                 return compute_binary(context, convert_value_to_operand(v), right, compute_func);
             }
@@ -228,7 +228,7 @@ where
     }
 
     if let Operand::Object(r) = right {
-        match context.get_value(r.name) {
+        match context.get_value(&r.name) {
             Ok(v) => {
                 return compute_func(left, convert_value_to_operand(v));
             }
@@ -241,7 +241,7 @@ where
     compute_func(left, right)
 }
 
-fn compute_and<'a>(left: Operand, right: Operand) -> Result<Operand<'a>, String> {
+fn compute_and<'a>(left: Operand, right: Operand) -> Result<Operand, String> {
     match (&left, &right) {
         (Operand::Literal(l), Operand::Literal(r)) => {
             Ok(Operand::Number(((l.len() != 0) && (r.len() != 0)) as i64))
@@ -256,7 +256,7 @@ fn compute_and<'a>(left: Operand, right: Operand) -> Result<Operand<'a>, String>
     }
 }
 
-fn compute_or<'a>(left: Operand, right: Operand) -> Result<Operand<'a>, String> {
+fn compute_or<'a>(left: Operand, right: Operand) -> Result<Operand, String> {
     match (&left, &right) {
         (Operand::Literal(l), Operand::Literal(r)) => {
             Ok(Operand::Number(((l.len() != 0) || (r.len() != 0)) as i64))
@@ -271,7 +271,7 @@ fn compute_or<'a>(left: Operand, right: Operand) -> Result<Operand<'a>, String> 
     }
 }
 
-fn compute_greater<'a>(left: Operand, right: Operand) -> Result<Operand<'a>, String> {
+fn compute_greater<'a>(left: Operand, right: Operand) -> Result<Operand, String> {
     match (&left, &right) {
         (Operand::Literal(l), Operand::Literal(r)) => Ok(Operand::Number((l > r) as i64)),
         (Operand::Number(l), Operand::Number(r)) => Ok(Operand::Number((l > r) as i64)),
@@ -280,7 +280,7 @@ fn compute_greater<'a>(left: Operand, right: Operand) -> Result<Operand<'a>, Str
     }
 }
 
-fn compute_greater_eq<'a>(left: Operand, right: Operand) -> Result<Operand<'a>, String> {
+fn compute_greater_eq<'a>(left: Operand, right: Operand) -> Result<Operand, String> {
     match (&left, &right) {
         (Operand::Literal(l), Operand::Literal(r)) => Ok(Operand::Number((l >= r) as i64)),
         (Operand::Number(l), Operand::Number(r)) => Ok(Operand::Number((l >= r) as i64)),
@@ -289,7 +289,7 @@ fn compute_greater_eq<'a>(left: Operand, right: Operand) -> Result<Operand<'a>, 
     }
 }
 
-fn compute_less<'a>(left: Operand, right: Operand) -> Result<Operand<'a>, String> {
+fn compute_less<'a>(left: Operand, right: Operand) -> Result<Operand, String> {
     match (&left, &right) {
         (Operand::Literal(l), Operand::Literal(r)) => Ok(Operand::Number((l < r) as i64)),
         (Operand::Number(l), Operand::Number(r)) => Ok(Operand::Number((l < r) as i64)),
@@ -298,7 +298,7 @@ fn compute_less<'a>(left: Operand, right: Operand) -> Result<Operand<'a>, String
     }
 }
 
-fn compute_less_eq<'a>(left: Operand, right: Operand) -> Result<Operand<'a>, String> {
+fn compute_less_eq<'a>(left: Operand, right: Operand) -> Result<Operand, String> {
     match (&left, &right) {
         (Operand::Literal(l), Operand::Literal(r)) => Ok(Operand::Number((l <= r) as i64)),
         (Operand::Number(l), Operand::Number(r)) => Ok(Operand::Number((l <= r) as i64)),
@@ -307,7 +307,7 @@ fn compute_less_eq<'a>(left: Operand, right: Operand) -> Result<Operand<'a>, Str
     }
 }
 
-fn compute_eq<'a>(left: Operand, right: Operand) -> Result<Operand<'a>, String> {
+fn compute_eq<'a>(left: Operand, right: Operand) -> Result<Operand, String> {
     match (&left, &right) {
         (Operand::Literal(l), Operand::Literal(r)) => Ok(Operand::Number((l == r) as i64)),
         (Operand::Number(l), Operand::Number(r)) => Ok(Operand::Number((l == r) as i64)),
@@ -316,7 +316,7 @@ fn compute_eq<'a>(left: Operand, right: Operand) -> Result<Operand<'a>, String> 
     }
 }
 
-fn compute_neq<'a>(left: Operand, right: Operand) -> Result<Operand<'a>, String> {
+fn compute_neq<'a>(left: Operand, right: Operand) -> Result<Operand, String> {
     match (&left, &right) {
         (Operand::Literal(l), Operand::Literal(r)) => Ok(Operand::Number((l != r) as i64)),
         (Operand::Number(l), Operand::Number(r)) => Ok(Operand::Number((l != r) as i64)),
@@ -325,7 +325,7 @@ fn compute_neq<'a>(left: Operand, right: Operand) -> Result<Operand<'a>, String>
     }
 }
 
-fn compute_not<'a>(operand: Operand) -> Result<Operand<'a>, String> {
+fn compute_not<'a>(operand: Operand) -> Result<Operand, String> {
     match &operand {
         Operand::Literal(s) => Ok(Operand::Number((s.len() == 0) as i64)),
         Operand::Number(n) => Ok(Operand::Number((n == &0) as i64)),
@@ -335,7 +335,7 @@ fn compute_not<'a>(operand: Operand) -> Result<Operand<'a>, String> {
 }
 
 #[cfg(test)]
-fn get_expr<'a>(s: &'a str) -> Expr<'a> {
+fn get_expr<'a>(s: &'a str) -> Expr {
     let mut res = Parser::parse(s).unwrap();
     match res.parse_tree.pop().unwrap() {
         Action::Do(expr) => expr,
@@ -346,9 +346,9 @@ fn get_expr<'a>(s: &'a str) -> Expr<'a> {
 #[test]
 fn compute_and_test() {
     let context_json = r#"{"a": 1, "b":0, "c":"abc", "d":"", "e": "def"}"#;
-    let mut context_value: Value = serde_json::from_str(context_json).unwrap();
+    let context_value: Value = serde_json::from_str(context_json).unwrap();
     let mut context = Context {
-        context: &mut context_value,
+        context: context_value,
     };
 
     {
@@ -374,9 +374,9 @@ fn compute_and_test() {
 #[test]
 fn compute_or_test() {
     let context_json = r#"{"a": 1, "b":0, "c":"abc", "d":"", "e": "def"}"#;
-    let mut context_value: Value = serde_json::from_str(context_json).unwrap();
+    let context_value: Value = serde_json::from_str(context_json).unwrap();
     let mut context = Context {
-        context: &mut context_value,
+        context: context_value,
     };
 
     {
@@ -402,9 +402,9 @@ fn compute_or_test() {
 #[test]
 fn compute_complex() {
     let context_json = r#"{"a": 1, "b":0, "c":"abc", "d":"", "e": "def"}"#;
-    let mut context_value: Value = serde_json::from_str(context_json).unwrap();
+    let context_value: Value = serde_json::from_str(context_json).unwrap();
     let mut context = Context {
-        context: &mut context_value,
+        context: context_value,
     };
 
     {
@@ -433,9 +433,9 @@ fn compute_complex() {
 #[test]
 fn compute_complex_object_name() {
     let context_json = r#"{"a": {"b" : 2, "c" : {"d" : 3 }}, "b" : 1}"#;
-    let mut context_value: Value = serde_json::from_str(context_json).unwrap();
+    let context_value: Value = serde_json::from_str(context_json).unwrap();
     let mut context = Context {
-        context: &mut context_value,
+        context: context_value,
     };
 
     {

@@ -4,12 +4,12 @@ use crate::expr::*;
 
 // Evaluate the parsed expression.
 #[derive(PartialEq, Debug)]
-pub struct Eval<'a> {
-    pub expr: Vec<Op<'a>>,
+pub struct Eval {
+    pub expr: Vec<Op>,
 }
 
-impl<'a> Eval<'a> {
-    pub fn new(mut expr: Expr<'a>) -> Result<Eval<'a>, String> {
+impl Eval {
+    pub fn new(mut expr: Expr) -> Result<Eval, String> {
         let mut operands: Vec<Vec<Op>> = Vec::new();
         let mut operators = Vec::new();
 
@@ -99,14 +99,18 @@ fn create_simple_unary() {
     let expr = Expr {
         ops: vec![
             Op::Not,
-            Op::Operand(Operand::Object(Object { name: "some_value" })),
+            Op::Operand(Operand::Object(Object {
+                name: "some_value".to_string(),
+            })),
         ],
     };
 
     let expected_eval = Eval {
         expr: vec![
             Op::Not,
-            Op::Operand(Operand::Object(Object { name: "some_value" })),
+            Op::Operand(Operand::Object(Object {
+                name: "some_value".to_string(),
+            })),
         ],
     };
 
@@ -120,7 +124,9 @@ fn create_multiple_unary_expr() {
             Op::Not,
             Op::Not,
             Op::Not,
-            Op::Operand(Operand::Object(Object { name: "some_value" })),
+            Op::Operand(Operand::Object(Object {
+                name: "some_value".to_string(),
+            })),
         ],
     };
 
@@ -129,7 +135,9 @@ fn create_multiple_unary_expr() {
             Op::Not,
             Op::Not,
             Op::Not,
-            Op::Operand(Operand::Object(Object { name: "some_value" })),
+            Op::Operand(Operand::Object(Object {
+                name: "some_value".to_string(),
+            })),
         ],
     };
     assert_eq!(Eval::new(expr).unwrap(), expected_eval);
@@ -139,7 +147,9 @@ fn create_multiple_unary_expr() {
 fn create_simple_binary_expr() {
     let expr = Expr {
         ops: vec![
-            Op::Operand(Operand::Object(Object { name: "some" })),
+            Op::Operand(Operand::Object(Object {
+                name: "some".to_string(),
+            })),
             Op::Equal,
             Op::Operand(Operand::Number(3)),
         ],
@@ -148,7 +158,9 @@ fn create_simple_binary_expr() {
     let expected_eval = Eval {
         expr: vec![
             Op::Equal,
-            Op::Operand(Operand::Object(Object { name: "some" })),
+            Op::Operand(Operand::Object(Object {
+                name: "some".to_string(),
+            })),
             Op::Operand(Operand::Number(3)),
         ],
     };
@@ -159,7 +171,9 @@ fn create_simple_binary_expr() {
 fn create_binary_with_unary_expr() {
     let expr = Expr {
         ops: vec![
-            Op::Operand(Operand::Object(Object { name: "some" })),
+            Op::Operand(Operand::Object(Object {
+                name: "some".to_string(),
+            })),
             Op::Equal,
             Op::Not,
             Op::Not,
@@ -170,7 +184,9 @@ fn create_binary_with_unary_expr() {
     let expected_eval = Eval {
         expr: vec![
             Op::Equal,
-            Op::Operand(Operand::Object(Object { name: "some" })),
+            Op::Operand(Operand::Object(Object {
+                name: "some".to_string(),
+            })),
             Op::Not,
             Op::Not,
             Op::Operand(Operand::Number(3)),
@@ -184,19 +200,29 @@ fn create_complex_expr() {
     let expr = Expr {
         ops: vec![
             Op::Not,
-            Op::Operand(Operand::Object(Object { name: "some_value" })),
+            Op::Operand(Operand::Object(Object {
+                name: "some_value".to_string(),
+            })),
             Op::And,
             Op::ParenOpen,
             Op::Not,
             Op::ParenOpen,
-            Op::Operand(Operand::Object(Object { name: "var1" })),
+            Op::Operand(Operand::Object(Object {
+                name: "var1".to_string(),
+            })),
             Op::NotEqual,
-            Op::Operand(Operand::Object(Object { name: "var2" })),
+            Op::Operand(Operand::Object(Object {
+                name: "var2".to_string(),
+            })),
             Op::ParenClose,
             Op::Or,
-            Op::Operand(Operand::Object(Object { name: "some" })),
+            Op::Operand(Operand::Object(Object {
+                name: "some".to_string(),
+            })),
             Op::LessEq,
-            Op::Operand(Operand::Object(Object { name: "val" })),
+            Op::Operand(Operand::Object(Object {
+                name: "val".to_string(),
+            })),
             Op::ParenClose,
         ],
     };
@@ -205,15 +231,25 @@ fn create_complex_expr() {
         expr: vec![
             Op::And,
             Op::Not,
-            Op::Operand(Operand::Object(Object { name: "some_value" })),
+            Op::Operand(Operand::Object(Object {
+                name: "some_value".to_string(),
+            })),
             Op::Or,
             Op::Not,
             Op::NotEqual,
-            Op::Operand(Operand::Object(Object { name: "var1" })),
-            Op::Operand(Operand::Object(Object { name: "var2" })),
+            Op::Operand(Operand::Object(Object {
+                name: "var1".to_string(),
+            })),
+            Op::Operand(Operand::Object(Object {
+                name: "var2".to_string(),
+            })),
             Op::LessEq,
-            Op::Operand(Operand::Object(Object { name: "some" })),
-            Op::Operand(Operand::Object(Object { name: "val" })),
+            Op::Operand(Operand::Object(Object {
+                name: "some".to_string(),
+            })),
+            Op::Operand(Operand::Object(Object {
+                name: "val".to_string(),
+            })),
         ],
     };
     assert_eq!(Eval::new(expr).unwrap(), expected_eval);
@@ -223,16 +259,26 @@ fn create_complex_expr() {
 fn create_complex_expr2() {
     let expr = Expr {
         ops: vec![
-            Op::Operand(Operand::Object(Object { name: "var1" })),
+            Op::Operand(Operand::Object(Object {
+                name: "var1".to_string(),
+            })),
             Op::GreaterEq,
-            Op::Operand(Operand::Object(Object { name: "var2" })),
+            Op::Operand(Operand::Object(Object {
+                name: "var2".to_string(),
+            })),
             Op::And,
-            Op::Operand(Operand::Object(Object { name: "var2" })),
+            Op::Operand(Operand::Object(Object {
+                name: "var2".to_string(),
+            })),
             Op::LessEq,
-            Op::Operand(Operand::Object(Object { name: "var3" })),
+            Op::Operand(Operand::Object(Object {
+                name: "var3".to_string(),
+            })),
             Op::Or,
             Op::Not,
-            Op::Operand(Operand::Object(Object { name: "var3" })),
+            Op::Operand(Operand::Object(Object {
+                name: "var3".to_string(),
+            })),
         ],
     };
 
@@ -241,13 +287,23 @@ fn create_complex_expr2() {
             Op::Or,
             Op::And,
             Op::GreaterEq,
-            Op::Operand(Operand::Object(Object { name: "var1" })),
-            Op::Operand(Operand::Object(Object { name: "var2" })),
+            Op::Operand(Operand::Object(Object {
+                name: "var1".to_string(),
+            })),
+            Op::Operand(Operand::Object(Object {
+                name: "var2".to_string(),
+            })),
             Op::LessEq,
-            Op::Operand(Operand::Object(Object { name: "var2" })),
-            Op::Operand(Operand::Object(Object { name: "var3" })),
+            Op::Operand(Operand::Object(Object {
+                name: "var2".to_string(),
+            })),
+            Op::Operand(Operand::Object(Object {
+                name: "var3".to_string(),
+            })),
             Op::Not,
-            Op::Operand(Operand::Object(Object { name: "var3" })),
+            Op::Operand(Operand::Object(Object {
+                name: "var3".to_string(),
+            })),
         ],
     };
     assert_eq!(Eval::new(expr).unwrap(), expected_eval);
