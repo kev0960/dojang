@@ -12,13 +12,15 @@ pub enum Op<'a> {
     Less,       // <
     LessEq,     // <=
     Greater,    // >
-    GreaterEq,  // >=
+    GreaterEq,  // >=,
+    Assign,     // =
     Operand(Operand<'a>),
 }
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum Operand<'a> {
     Literal(&'a str),
+    StringLiteral(String),
     Number(i64),
     Decimal(f64),
     Object(Object<'a>),
@@ -97,17 +99,27 @@ impl<'a> Parser<'a> {
                     let after_tag = &template[tag_start + 2..];
                     match after_tag.find("%>") {
                         Some(tag_end) => {
-                            match template.chars().nth(tag_start + 1).unwrap() {
-                                '=' => parse_tree.push(Action::Show(Show::ExprEscaped(Expr {
-                                    ops: Vec::new(),
-                                }))),
-                                '-' => parse_tree.push(Action::Show(Show::ExprUnescaped(Expr {
-                                    ops: Vec::new(),
-                                }))),
-                                _ => parse_tree.push(Action::Do(Expr { ops: Vec::new() })),
+                            let tag_to_parse;
+                            match template.chars().nth(tag_start + 2).unwrap() {
+                                '=' => {
+                                    parse_tree.push(Action::Show(Show::ExprEscaped(Expr {
+                                        ops: Vec::new(),
+                                    })));
+                                    tag_to_parse = &after_tag[1..tag_end];
+                                }
+                                '-' => {
+                                    parse_tree.push(Action::Show(Show::ExprUnescaped(Expr {
+                                        ops: Vec::new(),
+                                    })));
+                                    tag_to_parse = &after_tag[1..tag_end];
+                                }
+                                _ => {
+                                    parse_tree.push(Action::Do(Expr { ops: Vec::new() }));
+                                    tag_to_parse = &after_tag[..tag_end];
+                                }
                             }
 
-                            match Parser::parse_tag(&after_tag[..tag_end], &mut parse_tree) {
+                            match Parser::parse_tag(tag_to_parse, &mut parse_tree) {
                                 Err(s) => {
                                     return Err(s);
                                 }
@@ -262,8 +274,12 @@ impl<'a> Parser<'a> {
             ')' => action.add_op(Op::ParenClose),
             '<' => action.add_op(Op::Less),
             '>' => action.add_op(Op::Greater),
-            _ => {
-                return Err(format!("Unknown operator at {}", template));
+            '=' => action.add_op(Op::Assign),
+            c => {
+                return Err(format!(
+                    "Unknown operator at '{}', unknown : {}",
+                    template, c
+                ));
             }
         }
 
@@ -342,6 +358,7 @@ pub fn operator_priority(op: &Op) -> u32 {
         Op::NotEqual => 7,
         Op::And => 11,
         Op::Or => 12,
+        Op::Assign => 14,
         Op::ParenOpen => 100,
         Op::ParenClose => 100,
         _ => panic!("Oops {:?}", op),
@@ -614,6 +631,48 @@ fn parse_for_statement() {
             Action::Do(Expr {
                 ops: vec![Op::Operand(Operand::Literal("hello"))],
             }),
+            Action::End(),
+        ],
+    };
+
+    assert_eq!(result.unwrap(), expected_expr);
+}
+
+#[test]
+fn parse_tags_simple() {
+    let result = Parser::parse(r#"<html><% if a { %>some tag<% } %>"#);
+    let expected_expr = Parser {
+        parse_tree: vec![
+            Action::Show(Show::Html("<html>")),
+            Action::Do(Expr { ops: vec![] }),
+            Action::If(Expr {
+                ops: vec![Op::Operand(Operand::Object(Object { name: "a" }))],
+            }),
+            Action::Do(Expr { ops: vec![] }),
+            Action::Show(Show::Html("some tag")),
+            Action::Do(Expr { ops: vec![] }),
+            Action::End(),
+        ],
+    };
+
+    assert_eq!(result.unwrap(), expected_expr);
+}
+
+#[test]
+fn parse_tags_escaped() {
+    let result = Parser::parse(r#"<html><% if a { %><%= data %><% } %>"#);
+    let expected_expr = Parser {
+        parse_tree: vec![
+            Action::Show(Show::Html("<html>")),
+            Action::Do(Expr { ops: vec![] }),
+            Action::If(Expr {
+                ops: vec![Op::Operand(Operand::Object(Object { name: "a" }))],
+            }),
+            Action::Do(Expr { ops: vec![] }),
+            Action::Show(Show::ExprEscaped(Expr {
+                ops: vec![Op::Operand(Operand::Object(Object { name: "data" }))],
+            })),
+            Action::Do(Expr { ops: vec![] }),
             Action::End(),
         ],
     };

@@ -3,20 +3,28 @@ use crate::eval::*;
 use crate::expr::*;
 use serde_json::Value;
 
-pub struct Context<'a> {
-    context: &'a Value,
+pub struct Context {
+    context: Value,
 }
 
-impl<'a> Context<'a> {
+impl Context {
     fn get_value(&self, name: &str) -> Result<&Value, String> {
         let names = name.split(".").collect::<Vec<&str>>();
         if names.is_empty() {
             return Err(format!("Mapping not exist : {}", name));
         }
 
-        let mut value = self.context;
+        let mut value;
+        match self.context.get(names.get(0).unwrap()) {
+            Some(v) => {
+                value = v;
+            }
+            _ => {
+                return Err(format!("Mapping not exist {:?}", names));
+            }
+        }
 
-        for n in names {
+        for n in names.iter().skip(1) {
             match value.get(n) {
                 Some(v) => {
                     value = v;
@@ -30,11 +38,11 @@ impl<'a> Context<'a> {
 }
 
 pub trait ComputeExpr<'a> {
-    fn compute(&self, context: &'a Context) -> Result<Operand<'a>, String>;
+    fn run(&self, context: &'a mut Context) -> Result<Operand<'a>, String>;
 }
 
 impl<'a> ComputeExpr<'a> for Eval<'a> {
-    fn compute(&self, context: &'a Context) -> Result<Operand<'a>, String> {
+    fn run(&self, context: &'a mut Context) -> Result<Operand<'a>, String> {
         let mut operands: Vec<Operand> = Vec::new();
 
         for op in self.expr.iter().rev() {
@@ -81,7 +89,39 @@ impl<'a> ComputeExpr<'a> for Eval<'a> {
             ));
         }
 
-        Ok(operands.pop().unwrap())
+        match operands.pop().unwrap() {
+            Operand::Object(obj) => Ok(convert_value_to_operand(context.get_value(obj.name)?)),
+            operand => Ok(operand),
+        }
+    }
+}
+
+pub trait Convert {
+    fn is_true(&self) -> bool;
+    fn to_str(&self) -> String;
+}
+
+impl<'a> Convert for Operand<'a> {
+    fn is_true(&self) -> bool {
+        match &self {
+            Operand::Literal(l) => !l.is_empty(),
+            Operand::Number(n) => *n != 0,
+            Operand::Decimal(d) => *d != 0.,
+            _ => {
+                panic!("Unconvertible object {:?}", &self)
+            }
+        }
+    }
+
+    fn to_str(&self) -> String {
+        match &self {
+            Operand::Literal(l) => l.to_string(),
+            Operand::Number(n) => n.to_string(),
+            Operand::Decimal(d) => d.to_string(),
+            _ => {
+                panic!("Unconvertible object {:?}", &self)
+            }
+        }
     }
 }
 
@@ -306,26 +346,26 @@ fn get_expr<'a>(s: &'a str) -> Expr<'a> {
 #[test]
 fn compute_and_test() {
     let context_json = r#"{"a": 1, "b":0, "c":"abc", "d":"", "e": "def"}"#;
-    let context_value: Value = serde_json::from_str(context_json).unwrap();
-    let context = Context {
-        context: &context_value,
+    let mut context_value: Value = serde_json::from_str(context_json).unwrap();
+    let mut context = Context {
+        context: &mut context_value,
     };
 
     {
         let eval = Eval::new(get_expr(r"<% a && b %>")).unwrap();
-        let result = eval.compute(&context);
+        let result = eval.run(&mut context);
 
         assert_eq!(result.unwrap(), Operand::Number(0));
     }
     {
         let eval = Eval::new(get_expr(r"<% c && d %>")).unwrap();
-        let result = eval.compute(&context);
+        let result = eval.run(&mut context);
 
         assert_eq!(result.unwrap(), Operand::Number(0));
     }
     {
         let eval = Eval::new(get_expr(r"<% c && e %>")).unwrap();
-        let result = eval.compute(&context);
+        let result = eval.run(&mut context);
 
         assert_eq!(result.unwrap(), Operand::Number(1));
     }
@@ -334,26 +374,26 @@ fn compute_and_test() {
 #[test]
 fn compute_or_test() {
     let context_json = r#"{"a": 1, "b":0, "c":"abc", "d":"", "e": "def"}"#;
-    let context_value: Value = serde_json::from_str(context_json).unwrap();
-    let context = Context {
-        context: &context_value,
+    let mut context_value: Value = serde_json::from_str(context_json).unwrap();
+    let mut context = Context {
+        context: &mut context_value,
     };
 
     {
         let eval = Eval::new(get_expr(r"<% (a && b) || (c && e) %>")).unwrap();
-        let result = eval.compute(&context);
+        let result = eval.run(&mut context);
 
         assert_eq!(result.unwrap(), Operand::Number(1));
     }
     {
         let eval = Eval::new(get_expr(r"<% (a && b) || (c && d) %>")).unwrap();
-        let result = eval.compute(&context);
+        let result = eval.run(&mut context);
 
         assert_eq!(result.unwrap(), Operand::Number(0));
     }
     {
         let eval = Eval::new(get_expr(r"<% c || e %>")).unwrap();
-        let result = eval.compute(&context);
+        let result = eval.run(&mut context);
 
         assert_eq!(result.unwrap(), Operand::Number(1));
     }
@@ -362,20 +402,20 @@ fn compute_or_test() {
 #[test]
 fn compute_complex() {
     let context_json = r#"{"a": 1, "b":0, "c":"abc", "d":"", "e": "def"}"#;
-    let context_value: Value = serde_json::from_str(context_json).unwrap();
-    let context = Context {
-        context: &context_value,
+    let mut context_value: Value = serde_json::from_str(context_json).unwrap();
+    let mut context = Context {
+        context: &mut context_value,
     };
 
     {
         let eval = Eval::new(get_expr(r"<% !a && ((b != a) || c <= e) %>")).unwrap();
-        let result = eval.compute(&context);
+        let result = eval.run(&mut context);
 
         assert_eq!(result.unwrap(), Operand::Number(0));
     }
     {
         let eval = Eval::new(get_expr(r"<% !b && ((b != a) || c <= e && !d) %>")).unwrap();
-        let result = eval.compute(&context);
+        let result = eval.run(&mut context);
 
         assert_eq!(result.unwrap(), Operand::Number(1));
     }
@@ -384,7 +424,35 @@ fn compute_complex() {
             r#"<% (a == 1) && (b == 0) && (c == "abc") && !d && e == "def" %>"#,
         ))
         .unwrap();
-        let result = eval.compute(&context);
+        let result = eval.run(&mut context);
+
+        assert_eq!(result.unwrap(), Operand::Number(1));
+    }
+}
+
+#[test]
+fn compute_complex_object_name() {
+    let context_json = r#"{"a": {"b" : 2, "c" : {"d" : 3 }}, "b" : 1}"#;
+    let mut context_value: Value = serde_json::from_str(context_json).unwrap();
+    let mut context = Context {
+        context: &mut context_value,
+    };
+
+    {
+        let eval = Eval::new(get_expr(r"<% a.b %>")).unwrap();
+        let result = eval.run(&mut context);
+
+        assert_eq!(result.unwrap(), Operand::Number(2));
+    }
+    {
+        let eval = Eval::new(get_expr(r"<% a.c.d %>")).unwrap();
+        let result = eval.run(&mut context);
+
+        assert_eq!(result.unwrap(), Operand::Number(3));
+    }
+    {
+        let eval = Eval::new(get_expr(r#"<% b %>"#)).unwrap();
+        let result = eval.run(&mut context);
 
         assert_eq!(result.unwrap(), Operand::Number(1));
     }

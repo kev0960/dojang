@@ -35,8 +35,6 @@ impl<'a> Executer<'a> {
     fn compute_jump_table(
         insts: &Vec<Action<'a, Eval<'a>>>,
     ) -> Result<HashMap<usize, usize>, String> {
-        println!("insts : {:?}", insts);
-
         let mut inst_index = 0;
 
         let mut jump_table = HashMap::new();
@@ -144,32 +142,53 @@ impl<'a> Executer<'a> {
         Ok(jump_table)
     }
 
-    pub fn render(&self, context: &mut Context<'a>) -> String {
+    pub fn render(&self, context: &'a mut Context) -> Result<String, String> {
         let mut rendered = String::new();
 
         let mut inst_index = 0;
         while inst_index < self.insts.len() {
             match self.insts.get(inst_index).unwrap() {
                 Action::Show(show) => match show {
-                    Show::Html(html) => rendered.push_str(html),
+                    Show::Html(html) => {
+                        rendered.push_str(html);
+                    }
                     Show::ExprEscaped(eval) => {
-                        rendered.push_str(&*encode_safe(&Executer::render_expr(eval, context)))
+                        rendered.push_str(&*encode_safe(&eval.run(context)?.to_str()));
                     }
                     Show::ExprUnescaped(eval) => {
-                        rendered.push_str(&Executer::render_expr(eval, context))
+                        rendered.push_str(&eval.run(context)?.to_str());
                     }
                 },
-                _ => {}
+                Action::If(eval) | Action::While(eval) | Action::For(eval) => {
+                    // Jump only if the condition is false. Otherwise just go to next instruction.
+                    if !eval.run(context)?.is_true() {
+                        if let Some(next) = self.jump_table.get(&inst_index) {
+                            inst_index = *next;
+                            continue;
+                        } else {
+                            return Err(format!(
+                                "Jump of the if statement is not set: {:?} index : {}",
+                                self.insts, inst_index
+                            ));
+                        }
+                    }
+                }
+                Action::End() => {
+                    if let Some(next) = self.jump_table.get(&inst_index) {
+                        inst_index = *next;
+                        continue;
+                    }
+                }
+                Action::Do(eval) => {
+                    eval.run(context)?;
+                }
+                Action::Else() => {}
             }
 
             inst_index += 1;
         }
 
-        "".to_string()
-    }
-
-    fn render_expr(expr: &'a Eval<'a>, context: &Context<'a>) -> String {
-        "".to_string()
+        Ok(rendered)
     }
 }
 
