@@ -200,6 +200,33 @@ impl<'a> Parser<'a> {
                 Parser::handle_token(&template[token_begin..current], parse_tree);
                 parse_tree.push(Action::End());
                 token_begin = current + 1;
+            } else if current_char == ';' {
+                Parser::handle_token(&template[token_begin..current], parse_tree);
+                match parse_tree.pop().unwrap() {
+                    Action::Do(expr) => {
+                        parse_tree.push(Action::Do(expr));
+                        parse_tree.push(Action::Do(Expr { ops: Vec::new() }));
+                    }
+                    Action::Show(show) => match show {
+                        Show::Html(_) => {
+                            panic!("Show should not contain html");
+                        }
+                        Show::ExprUnescaped(expr) => {
+                            // For <%= ... %> tags, only the last expression will be shown.
+                            // In other words, <%= a; b %> is identical to <%= b %>
+                            parse_tree.push(Action::Do(expr));
+                            parse_tree
+                                .push(Action::Show(Show::ExprUnescaped(Expr { ops: Vec::new() })))
+                        }
+                        Show::ExprEscaped(expr) => {
+                            parse_tree.push(Action::Do(expr));
+                            parse_tree
+                                .push(Action::Show(Show::ExprEscaped(Expr { ops: Vec::new() })))
+                        }
+                    },
+                    _ => return Err(format!("Invalid position of ; at {}", template)),
+                }
+                token_begin = current + 1;
             }
 
             current += 1;
@@ -792,6 +819,53 @@ fn parse_tags_escaped() {
             })),
             Action::Do(Expr { ops: vec![] }),
             Action::End(),
+        ],
+    };
+
+    assert_eq!(result.unwrap(), expected_expr);
+}
+
+#[test]
+fn parse_multipe_expressions() {
+    let result = Parser::parse(r#"<html><% a; b; c %><%= a; b %><%- a; b  %>"#);
+    let expected_expr = Parser {
+        parse_tree: vec![
+            Action::Show(Show::Html("<html>")),
+            Action::Do(Expr {
+                ops: vec![Op::Operand(Operand::Object(Object {
+                    name: "a".to_string(),
+                }))],
+            }),
+            Action::Do(Expr {
+                ops: vec![Op::Operand(Operand::Object(Object {
+                    name: "b".to_string(),
+                }))],
+            }),
+            Action::Do(Expr {
+                ops: vec![Op::Operand(Operand::Object(Object {
+                    name: "c".to_string(),
+                }))],
+            }),
+            Action::Do(Expr {
+                ops: vec![Op::Operand(Operand::Object(Object {
+                    name: "a".to_string(),
+                }))],
+            }),
+            Action::Show(Show::ExprEscaped(Expr {
+                ops: vec![Op::Operand(Operand::Object(Object {
+                    name: "b".to_string(),
+                }))],
+            })),
+            Action::Do(Expr {
+                ops: vec![Op::Operand(Operand::Object(Object {
+                    name: "a".to_string(),
+                }))],
+            }),
+            Action::Show(Show::ExprUnescaped(Expr {
+                ops: vec![Op::Operand(Operand::Object(Object {
+                    name: "b".to_string(),
+                }))],
+            })),
         ],
     };
 

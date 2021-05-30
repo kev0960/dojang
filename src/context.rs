@@ -5,7 +5,7 @@ use serde_json::Value;
 
 #[derive(Debug)]
 pub struct Context {
-    context: Value,
+    pub context: Value,
 }
 
 impl Context {
@@ -332,7 +332,6 @@ fn compute_binary_assign<ComputeFunc>(
 where
     ComputeFunc: Fn(Operand, Operand) -> Result<Operand, String>,
 {
-    println!("l : {:?} r : {:?}", left, right);
     if let Operand::Object(ref object) = left {
         match right {
             Operand::Object(right_obj) => {
@@ -680,7 +679,6 @@ fn compute_arithmetic() {
         let eval = Eval::new(get_expr(r"<% b = a = (a + b * c - e / d) * f %>")).unwrap();
         let result = eval.run(&mut context);
 
-        println!("{:?}", context);
         assert_eq!(result.unwrap(), Operand::Number(8));
         assert_eq!(context.context.get("a").unwrap().as_i64().unwrap(), 8);
         assert_eq!(context.context.get("b").unwrap().as_i64().unwrap(), 8);

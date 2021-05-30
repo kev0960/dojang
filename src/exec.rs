@@ -3,6 +3,7 @@ use crate::context::*;
 use crate::eval::*;
 use crate::expr::*;
 use html_escape::encode_safe;
+use serde_json::Value;
 use std::collections::{BTreeMap, HashMap};
 
 // The executer that renders the template.
@@ -151,10 +152,10 @@ impl<'a> Executer<'a> {
                         rendered.push_str(html);
                     }
                     Show::ExprEscaped(eval) => {
-                        rendered.push_str(&*encode_safe(&eval.run(context)?.to_str()));
+                        rendered.push_str(&*encode_safe(&Executer::run_eval(context, &eval)?));
                     }
                     Show::ExprUnescaped(eval) => {
-                        rendered.push_str(&eval.run(context)?.to_str());
+                        rendered.push_str(&Executer::run_eval(context, &eval)?);
                     }
                 },
                 Action::If(eval) | Action::While(eval) | Action::For(eval) => {
@@ -178,7 +179,7 @@ impl<'a> Executer<'a> {
                     }
                 }
                 Action::Do(eval) => {
-                    eval.run(context)?;
+                    &Executer::run_eval(context, &eval)?;
                 }
                 Action::Else() => {}
             }
@@ -187,6 +188,15 @@ impl<'a> Executer<'a> {
         }
 
         Ok(rendered)
+    }
+
+    // Runs Eval if it is not empty.
+    fn run_eval(context: &mut Context, eval: &Eval) -> Result<String, String> {
+        if eval.is_empty() {
+            return Ok("".to_string());
+        }
+
+        Ok(eval.run(context)?.to_str())
     }
 }
 
@@ -302,4 +312,28 @@ fn test_for_and_if() {
             .cloned()
             .collect()
     )
+}
+
+#[test]
+fn test_arithmetic() {
+    let context_json = r#"{"a": 1, "b":2, "c": 3, "d" : 2, "e" : 6, "f" : 2}"#;
+    {
+        let context_value: Value = serde_json::from_str(context_json).unwrap();
+        let mut context = Context {
+            context: context_value,
+        };
+
+        // b = a = (1 + 2 * 3 - 6 / 2) * 2  == 8
+        let executer = Executer::new(
+            Parser::parse(
+                r"<% b = a = (a + b * c - e / d) * f;e=a+b; if e == 16 { g = 5; h = 6} %>g=<%= g %> h=<%= h %>",
+            )
+            .unwrap(),
+        )
+        .unwrap();
+
+        let result = executer.render(&mut context).unwrap();
+
+        assert_eq!(result, "g=5 h=6".to_string());
+    }
 }

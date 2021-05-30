@@ -79,6 +79,10 @@ impl Eval {
             expr: operands.into_iter().flatten().collect(),
         })
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.expr.is_empty()
+    }
 }
 
 fn is_second_priority_higher(op1: &Op, op2: &Op) -> bool {
