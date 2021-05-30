@@ -3,6 +3,7 @@ use crate::eval::*;
 use crate::expr::*;
 use serde_json::Value;
 
+#[derive(Debug)]
 pub struct Context {
     context: Value,
 }
@@ -34,6 +35,47 @@ impl Context {
         }
 
         Ok(value)
+    }
+
+    fn set_value(&mut self, name: &str, operand: Operand) -> Result<(), String> {
+        let names = name.split(".").collect::<Vec<&str>>();
+        if names.is_empty() {
+            return Err(format!("Mapping not exist : {}", name));
+        }
+
+        let mut value: &mut Value;
+        match self.context.get_mut(names.get(0).unwrap()) {
+            Some(v) => {
+                value = v;
+            }
+            _ => {
+                if names.len() > 1 {
+                    return Err(format!(
+                        "Local variable should not use dot operator. {:?}",
+                        name
+                    ));
+                }
+
+                self.context.as_object_mut().unwrap().insert(
+                    names.get(0).unwrap().to_string(),
+                    convert_operand_to_value(operand),
+                );
+
+                return Ok(());
+            }
+        }
+
+        for n in names.iter().skip(1) {
+            match value.get_mut(n) {
+                Some(v) => {
+                    value = v;
+                }
+                _ => return Err(format!("Mapping not exist : {} at {}", name, n)),
+            }
+        }
+
+        *value = convert_operand_to_value(operand);
+        Ok(())
     }
 }
 
@@ -68,8 +110,9 @@ impl<'a> ComputeExpr<'a> for Eval {
                             Err(e) => return Err(e),
                         }
                     } else if num_operands == 2 {
-                        let right = operands.pop().unwrap();
+                        // Since we are iterating from back, left is the top most operand.
                         let left = operands.pop().unwrap();
+                        let right = operands.pop().unwrap();
 
                         match optr.compute_binary(context, left, right) {
                             Ok(operand) => {
@@ -152,6 +195,7 @@ impl ComputeOp for Op {
             Op::GreaterEq => return compute_binary(context, left, right, compute_greater_eq),
             Op::Less => return compute_binary(context, left, right, compute_less),
             Op::LessEq => return compute_binary(context, left, right, compute_less_eq),
+            Op::Assign => return compute_simple_assign(context, left, right),
             _ => {}
         }
 
@@ -185,6 +229,17 @@ fn convert_value_to_operand(value: &Value) -> Operand {
     }
 }
 
+fn convert_operand_to_value(operand: Operand) -> Value {
+    match operand {
+        Operand::Number(n) => Value::from(n),
+        Operand::Decimal(d) => Value::from(d),
+        Operand::Literal(l) => Value::from(l),
+        _ => {
+            panic!("Unable to convert object to value.")
+        }
+    }
+}
+
 fn compute_unary<'a, ComputeFunc>(
     context: &'a Context,
     op: Operand,
@@ -207,8 +262,8 @@ where
     compute_func(op)
 }
 
-fn compute_binary<'a, ComputeFunc>(
-    context: &'a Context,
+fn compute_binary<ComputeFunc>(
+    context: &Context,
     left: Operand,
     right: Operand,
     compute_func: ComputeFunc,
@@ -241,7 +296,67 @@ where
     compute_func(left, right)
 }
 
-fn compute_and<'a>(left: Operand, right: Operand) -> Result<Operand, String> {
+fn compute_simple_assign(
+    context: &mut Context,
+    left: Operand,
+    right: Operand,
+) -> Result<Operand, String> {
+    if let Operand::Object(ref object) = left {
+        match right {
+            Operand::Object(right_obj) => {
+                context.set_value(
+                    &object.name,
+                    convert_value_to_operand(context.get_value(&right_obj.name)?),
+                )?;
+            }
+            _ => {
+                context.set_value(&object.name, right)?;
+            }
+        }
+        Ok(left)
+    } else {
+        return Err(format!("Cannot assign to non-object {:?}", left));
+    }
+}
+
+fn compute_binary_assign<ComputeFunc>(
+    context: &mut Context,
+    left: Operand,
+    right: Operand,
+    compute_func: ComputeFunc,
+) -> Result<Operand, String>
+where
+    ComputeFunc: Fn(Operand, Operand) -> Result<Operand, String>,
+{
+    println!("l : {:?} r : {:?}", left, right);
+    if let Operand::Object(ref object) = left {
+        match right {
+            Operand::Object(right_obj) => {
+                context.set_value(
+                    &object.name,
+                    compute_func(
+                        convert_value_to_operand(context.get_value(&object.name)?),
+                        convert_value_to_operand(context.get_value(&right_obj.name)?),
+                    )?,
+                )?;
+            }
+            _ => {
+                context.set_value(
+                    &object.name,
+                    compute_func(
+                        convert_value_to_operand(context.get_value(&object.name)?),
+                        right,
+                    )?,
+                )?;
+            }
+        }
+        Ok(left)
+    } else {
+        return Err(format!("Cannot assign to non-object {:?}", left));
+    }
+}
+
+fn compute_and(left: Operand, right: Operand) -> Result<Operand, String> {
     match (&left, &right) {
         (Operand::Literal(l), Operand::Literal(r)) => {
             Ok(Operand::Number(((l.len() != 0) && (r.len() != 0)) as i64))
@@ -256,7 +371,7 @@ fn compute_and<'a>(left: Operand, right: Operand) -> Result<Operand, String> {
     }
 }
 
-fn compute_or<'a>(left: Operand, right: Operand) -> Result<Operand, String> {
+fn compute_or(left: Operand, right: Operand) -> Result<Operand, String> {
     match (&left, &right) {
         (Operand::Literal(l), Operand::Literal(r)) => {
             Ok(Operand::Number(((l.len() != 0) || (r.len() != 0)) as i64))
@@ -271,7 +386,7 @@ fn compute_or<'a>(left: Operand, right: Operand) -> Result<Operand, String> {
     }
 }
 
-fn compute_greater<'a>(left: Operand, right: Operand) -> Result<Operand, String> {
+fn compute_greater(left: Operand, right: Operand) -> Result<Operand, String> {
     match (&left, &right) {
         (Operand::Literal(l), Operand::Literal(r)) => Ok(Operand::Number((l > r) as i64)),
         (Operand::Number(l), Operand::Number(r)) => Ok(Operand::Number((l > r) as i64)),
@@ -280,7 +395,7 @@ fn compute_greater<'a>(left: Operand, right: Operand) -> Result<Operand, String>
     }
 }
 
-fn compute_greater_eq<'a>(left: Operand, right: Operand) -> Result<Operand, String> {
+fn compute_greater_eq(left: Operand, right: Operand) -> Result<Operand, String> {
     match (&left, &right) {
         (Operand::Literal(l), Operand::Literal(r)) => Ok(Operand::Number((l >= r) as i64)),
         (Operand::Number(l), Operand::Number(r)) => Ok(Operand::Number((l >= r) as i64)),
@@ -289,7 +404,7 @@ fn compute_greater_eq<'a>(left: Operand, right: Operand) -> Result<Operand, Stri
     }
 }
 
-fn compute_less<'a>(left: Operand, right: Operand) -> Result<Operand, String> {
+fn compute_less(left: Operand, right: Operand) -> Result<Operand, String> {
     match (&left, &right) {
         (Operand::Literal(l), Operand::Literal(r)) => Ok(Operand::Number((l < r) as i64)),
         (Operand::Number(l), Operand::Number(r)) => Ok(Operand::Number((l < r) as i64)),
@@ -298,7 +413,7 @@ fn compute_less<'a>(left: Operand, right: Operand) -> Result<Operand, String> {
     }
 }
 
-fn compute_less_eq<'a>(left: Operand, right: Operand) -> Result<Operand, String> {
+fn compute_less_eq(left: Operand, right: Operand) -> Result<Operand, String> {
     match (&left, &right) {
         (Operand::Literal(l), Operand::Literal(r)) => Ok(Operand::Number((l <= r) as i64)),
         (Operand::Number(l), Operand::Number(r)) => Ok(Operand::Number((l <= r) as i64)),
@@ -307,7 +422,7 @@ fn compute_less_eq<'a>(left: Operand, right: Operand) -> Result<Operand, String>
     }
 }
 
-fn compute_eq<'a>(left: Operand, right: Operand) -> Result<Operand, String> {
+fn compute_eq(left: Operand, right: Operand) -> Result<Operand, String> {
     match (&left, &right) {
         (Operand::Literal(l), Operand::Literal(r)) => Ok(Operand::Number((l == r) as i64)),
         (Operand::Number(l), Operand::Number(r)) => Ok(Operand::Number((l == r) as i64)),
@@ -316,7 +431,7 @@ fn compute_eq<'a>(left: Operand, right: Operand) -> Result<Operand, String> {
     }
 }
 
-fn compute_neq<'a>(left: Operand, right: Operand) -> Result<Operand, String> {
+fn compute_neq(left: Operand, right: Operand) -> Result<Operand, String> {
     match (&left, &right) {
         (Operand::Literal(l), Operand::Literal(r)) => Ok(Operand::Number((l != r) as i64)),
         (Operand::Number(l), Operand::Number(r)) => Ok(Operand::Number((l != r) as i64)),
@@ -325,13 +440,17 @@ fn compute_neq<'a>(left: Operand, right: Operand) -> Result<Operand, String> {
     }
 }
 
-fn compute_not<'a>(operand: Operand) -> Result<Operand, String> {
+fn compute_not(operand: Operand) -> Result<Operand, String> {
     match &operand {
         Operand::Literal(s) => Ok(Operand::Number((s.len() == 0) as i64)),
         Operand::Number(n) => Ok(Operand::Number((n == &0) as i64)),
         Operand::Decimal(d) => Ok(Operand::Number((d == &0.) as i64)),
         _ => Err(format!("Invalid operation NOT {:?}", operand)),
     }
+}
+
+fn compute_assign(_left: Operand, right: Operand) -> Result<Operand, String> {
+    Ok(right)
 }
 
 #[cfg(test)]
@@ -455,5 +574,46 @@ fn compute_complex_object_name() {
         let result = eval.run(&mut context);
 
         assert_eq!(result.unwrap(), Operand::Number(1));
+    }
+}
+
+#[test]
+fn compute_assign_test() {
+    let context_json = r#"{"a": 1, "b":0, "c": 1}"#;
+    {
+        let context_value: Value = serde_json::from_str(context_json).unwrap();
+        let mut context = Context {
+            context: context_value,
+        };
+
+        let eval = Eval::new(get_expr(r"<% a = a && b %>")).unwrap();
+        let result = eval.run(&mut context);
+
+        assert_eq!(result.unwrap(), Operand::Number(0));
+        assert_eq!(context.context.get("a").unwrap().as_i64().unwrap(), 0);
+    }
+    {
+        let context_value: Value = serde_json::from_str(context_json).unwrap();
+        let mut context = Context {
+            context: context_value,
+        };
+
+        let eval = Eval::new(get_expr(r"<% a = a && c %>")).unwrap();
+        let result = eval.run(&mut context);
+
+        assert_eq!(result.unwrap(), Operand::Number(1));
+        assert_eq!(context.context.get("a").unwrap().as_i64().unwrap(), 1);
+    }
+    {
+        let context_value: Value = serde_json::from_str(context_json).unwrap();
+        let mut context = Context {
+            context: context_value,
+        };
+
+        let eval = Eval::new(get_expr(r"<% d = a && c %>")).unwrap();
+        let result = eval.run(&mut context);
+
+        assert_eq!(result.unwrap(), Operand::Number(1));
+        assert_eq!(context.context.get("d").unwrap().as_i64().unwrap(), 1);
     }
 }

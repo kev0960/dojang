@@ -257,7 +257,7 @@ impl<'a> Parser<'a> {
     ) -> Result<usize, String> {
         // Check for the binary operators.
         if template.len() >= start + 2 {
-            if let Some(op) = check_binary_op(&template[start..start + 2]) {
+            if let Some(op) = check_2_char_op(&template[start..start + 2]) {
                 action.add_op(op);
                 return Ok(start + 2);
             }
@@ -320,7 +320,7 @@ impl<'a> Parser<'a> {
     }
 }
 
-fn check_binary_op(s: &str) -> Option<Op> {
+fn check_2_char_op(s: &str) -> Option<Op> {
     if s.len() != 2 {
         return None;
     }

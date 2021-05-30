@@ -308,3 +308,35 @@ fn create_complex_expr2() {
     };
     assert_eq!(Eval::new(expr).unwrap(), expected_eval);
 }
+
+#[test]
+fn check_assign_op() {
+    let expr = Expr {
+        ops: vec![
+            Op::Operand(Operand::Object(Object {
+                name: "a".to_string(),
+            })),
+            Op::Assign,
+            Op::Operand(Operand::Object(Object {
+                name: "a".to_string(),
+            })),
+            Op::And,
+            Op::Operand(Operand::Number(3)),
+        ],
+    };
+
+    let expected_eval = Eval {
+        expr: vec![
+            Op::Assign,
+            Op::Operand(Operand::Object(Object {
+                name: "a".to_string(),
+            })),
+            Op::And,
+            Op::Operand(Operand::Object(Object {
+                name: "a".to_string(),
+            })),
+            Op::Operand(Operand::Number(3)),
+        ],
+    };
+    assert_eq!(Eval::new(expr).unwrap(), expected_eval);
+}
