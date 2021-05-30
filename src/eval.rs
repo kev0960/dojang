@@ -17,8 +17,11 @@ impl Eval {
         expr.ops.push(Op::ParenClose);
         expr.ops.insert(0, Op::ParenOpen);
 
+        // We have to scan from the back.
+        expr.ops.reverse();
         while !expr.ops.is_empty() {
-            let op = expr.ops.remove(0);
+            let op = expr.ops.pop().unwrap();
+
             match op {
                 Op::Operand(operand) => {
                     operands.push(vec![Op::Operand(operand)]);
@@ -42,7 +45,7 @@ impl Eval {
                         } else if last_op == &Op::ParenOpen && optr == Op::ParenClose {
                             operators.pop();
                             break;
-                        } else if operator_num_operands(&optr) == 1
+                        } else if (optr == Op::Not || optr == Op::Assign)
                             && is_second_priority_higher_or_equal(last_op, &optr)
                         {
                             operators.push(optr);
@@ -336,6 +339,111 @@ fn check_assign_op() {
                 name: "a".to_string(),
             })),
             Op::Operand(Operand::Number(3)),
+        ],
+    };
+    assert_eq!(Eval::new(expr).unwrap(), expected_eval);
+}
+
+#[test]
+fn check_multiple_assign() {
+    let expr = Expr {
+        ops: vec![
+            Op::Operand(Operand::Object(Object {
+                name: "a".to_string(),
+            })),
+            Op::Assign,
+            Op::Operand(Operand::Object(Object {
+                name: "b".to_string(),
+            })),
+            Op::Assign,
+            Op::Operand(Operand::Object(Object {
+                name: "c".to_string(),
+            })),
+        ],
+    };
+
+    let expected_eval = Eval {
+        expr: vec![
+            Op::Assign,
+            Op::Operand(Operand::Object(Object {
+                name: "a".to_string(),
+            })),
+            Op::Assign,
+            Op::Operand(Operand::Object(Object {
+                name: "b".to_string(),
+            })),
+            Op::Operand(Operand::Object(Object {
+                name: "c".to_string(),
+            })),
+        ],
+    };
+    assert_eq!(Eval::new(expr).unwrap(), expected_eval);
+}
+#[test]
+fn arithmetic_expression() {
+    let expr = Expr {
+        ops: vec![
+            Op::ParenOpen,
+            Op::Operand(Operand::Object(Object {
+                name: "a".to_string(),
+            })),
+            Op::Plus,
+            Op::Operand(Operand::Object(Object {
+                name: "b".to_string(),
+            })),
+            Op::Multiply,
+            Op::Operand(Operand::Object(Object {
+                name: "c".to_string(),
+            })),
+            Op::Minus,
+            Op::Operand(Operand::Object(Object {
+                name: "e".to_string(),
+            })),
+            Op::Divide,
+            Op::Operand(Operand::Object(Object {
+                name: "d".to_string(),
+            })),
+            Op::ParenClose,
+            Op::Multiply,
+            Op::Operand(Operand::Object(Object {
+                name: "f".to_string(),
+            })),
+            Op::Plus,
+            Op::Operand(Operand::Number(1)),
+            Op::Plus,
+            Op::Operand(Operand::Number(2)),
+        ],
+    };
+
+    let expected_eval = Eval {
+        expr: vec![
+            Op::Plus,
+            Op::Plus,
+            Op::Multiply,
+            Op::Minus,
+            Op::Plus,
+            Op::Operand(Operand::Object(Object {
+                name: "a".to_string(),
+            })),
+            Op::Multiply,
+            Op::Operand(Operand::Object(Object {
+                name: "b".to_string(),
+            })),
+            Op::Operand(Operand::Object(Object {
+                name: "c".to_string(),
+            })),
+            Op::Divide,
+            Op::Operand(Operand::Object(Object {
+                name: "e".to_string(),
+            })),
+            Op::Operand(Operand::Object(Object {
+                name: "d".to_string(),
+            })),
+            Op::Operand(Operand::Object(Object {
+                name: "f".to_string(),
+            })),
+            Op::Operand(Operand::Number(1)),
+            Op::Operand(Operand::Number(2)),
         ],
     };
     assert_eq!(Eval::new(expr).unwrap(), expected_eval);

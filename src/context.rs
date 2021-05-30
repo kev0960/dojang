@@ -196,6 +196,10 @@ impl ComputeOp for Op {
             Op::Less => return compute_binary(context, left, right, compute_less),
             Op::LessEq => return compute_binary(context, left, right, compute_less_eq),
             Op::Assign => return compute_simple_assign(context, left, right),
+            Op::Plus => return compute_binary(context, left, right, compute_add),
+            Op::Minus => return compute_binary(context, left, right, compute_minus),
+            Op::Multiply => return compute_binary(context, left, right, compute_multiply),
+            Op::Divide => return compute_binary(context, left, right, compute_divide),
             _ => {}
         }
 
@@ -440,6 +444,51 @@ fn compute_neq(left: Operand, right: Operand) -> Result<Operand, String> {
     }
 }
 
+fn compute_add(left: Operand, right: Operand) -> Result<Operand, String> {
+    match (left, right) {
+        (Operand::Literal(mut l), Operand::Literal(r)) => {
+            l.push_str(&r);
+            Ok(Operand::Literal(l))
+        }
+        (Operand::Number(l), Operand::Number(r)) => Ok(Operand::Number(l + r)),
+        (Operand::Decimal(l), Operand::Decimal(r)) => Ok(Operand::Decimal(l + r)),
+        (left, right) => Err(format!("Type mismatch : {:?} {:?}", left, right)),
+    }
+}
+
+fn compute_minus(left: Operand, right: Operand) -> Result<Operand, String> {
+    match (left, right) {
+        (Operand::Literal(l), Operand::Literal(r)) => {
+            Err(format!("Cannot use '-' between strings {:?} {:?}", l, r))
+        }
+        (Operand::Number(l), Operand::Number(r)) => Ok(Operand::Number(l - r)),
+        (Operand::Decimal(l), Operand::Decimal(r)) => Ok(Operand::Decimal(l - r)),
+        (left, right) => Err(format!("Type mismatch : {:?} {:?}", left, right)),
+    }
+}
+
+fn compute_multiply(left: Operand, right: Operand) -> Result<Operand, String> {
+    match (left, right) {
+        (Operand::Literal(l), Operand::Literal(r)) => {
+            Err(format!("Cannot use '*' between strings {:?} {:?}", l, r))
+        }
+        (Operand::Number(l), Operand::Number(r)) => Ok(Operand::Number(l * r)),
+        (Operand::Decimal(l), Operand::Decimal(r)) => Ok(Operand::Decimal(l * r)),
+        (left, right) => Err(format!("Type mismatch : {:?} {:?}", left, right)),
+    }
+}
+
+fn compute_divide(left: Operand, right: Operand) -> Result<Operand, String> {
+    match (left, right) {
+        (Operand::Literal(l), Operand::Literal(r)) => {
+            Err(format!("Cannot use '/' between strings {:?} {:?}", l, r))
+        }
+        (Operand::Number(l), Operand::Number(r)) => Ok(Operand::Number(l / r)),
+        (Operand::Decimal(l), Operand::Decimal(r)) => Ok(Operand::Decimal(l / r)),
+        (left, right) => Err(format!("Type mismatch : {:?} {:?}", left, right)),
+    }
+}
+
 fn compute_not(operand: Operand) -> Result<Operand, String> {
     match &operand {
         Operand::Literal(s) => Ok(Operand::Number((s.len() == 0) as i64)),
@@ -615,5 +664,25 @@ fn compute_assign_test() {
 
         assert_eq!(result.unwrap(), Operand::Number(1));
         assert_eq!(context.context.get("d").unwrap().as_i64().unwrap(), 1);
+    }
+}
+
+#[test]
+fn compute_arithmetic() {
+    let context_json = r#"{"a": 1, "b":2, "c": 3, "d" : 2, "e" : 6, "f" : 2}"#;
+    {
+        let context_value: Value = serde_json::from_str(context_json).unwrap();
+        let mut context = Context {
+            context: context_value,
+        };
+
+        // (1 + 2 * 3 - 6 / 2) * 2
+        let eval = Eval::new(get_expr(r"<% b = a = (a + b * c - e / d) * f %>")).unwrap();
+        let result = eval.run(&mut context);
+
+        println!("{:?}", context);
+        assert_eq!(result.unwrap(), Operand::Number(8));
+        assert_eq!(context.context.get("a").unwrap().as_i64().unwrap(), 8);
+        assert_eq!(context.context.get("b").unwrap().as_i64().unwrap(), 8);
     }
 }

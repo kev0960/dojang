@@ -14,6 +14,10 @@ pub enum Op {
     Greater,    // >
     GreaterEq,  // >=,
     Assign,     // =
+    Plus,       // +
+    Minus,      // -
+    Multiply,   // *
+    Divide,     // /
     Operand(Operand),
 }
 
@@ -161,7 +165,8 @@ impl<'a> Parser<'a> {
             }
 
             // Handle Operators.
-            match template[current..current + 1].find(&['&', '|', '(', ')', '!', '=', '<', '>'][..])
+            match template[current..current + 1]
+                .find(&['&', '|', '(', ')', '!', '=', '<', '>', '+', '-', '*', '/'][..])
             {
                 Some(_) => {
                     Parser::handle_operand(
@@ -271,6 +276,10 @@ impl<'a> Parser<'a> {
             '<' => action.add_op(Op::Less),
             '>' => action.add_op(Op::Greater),
             '=' => action.add_op(Op::Assign),
+            '+' => action.add_op(Op::Plus),
+            '-' => action.add_op(Op::Minus),
+            '*' => action.add_op(Op::Multiply),
+            '/' => action.add_op(Op::Divide),
             c => {
                 return Err(format!(
                     "Unknown operator at '{}', unknown : {}",
@@ -348,6 +357,10 @@ fn check_2_char_op(s: &str) -> Option<Op> {
 pub fn operator_priority(op: &Op) -> u32 {
     match op {
         Op::Not => 2,
+        Op::Multiply => 3,
+        Op::Divide => 3,
+        Op::Plus => 4,
+        Op::Minus => 4,
         Op::Greater => 6,
         Op::GreaterEq => 6,
         Op::Less => 6,
@@ -398,6 +411,45 @@ fn parse_simple_expr_with_unary() {
                 Op::Not,
                 Op::Operand(Operand::Object(Object {
                     name: "some_value".to_string(),
+                })),
+            ],
+        })],
+    };
+
+    assert_eq!(result.unwrap(), expected_expr);
+}
+
+#[test]
+fn parse_complex_binary_and_unary() {
+    let result = Parser::parse("<% (a + b * c - e / d) * f %>");
+
+    let expected_expr = Parser {
+        parse_tree: vec![Action::Do(Expr {
+            ops: vec![
+                Op::ParenOpen,
+                Op::Operand(Operand::Object(Object {
+                    name: "a".to_string(),
+                })),
+                Op::Plus,
+                Op::Operand(Operand::Object(Object {
+                    name: "b".to_string(),
+                })),
+                Op::Multiply,
+                Op::Operand(Operand::Object(Object {
+                    name: "c".to_string(),
+                })),
+                Op::Minus,
+                Op::Operand(Operand::Object(Object {
+                    name: "e".to_string(),
+                })),
+                Op::Divide,
+                Op::Operand(Operand::Object(Object {
+                    name: "d".to_string(),
+                })),
+                Op::ParenClose,
+                Op::Multiply,
+                Op::Operand(Operand::Object(Object {
+                    name: "f".to_string(),
                 })),
             ],
         })],
