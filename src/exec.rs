@@ -315,7 +315,7 @@ fn test_for_and_if() {
 }
 
 #[test]
-fn test_arithmetic() {
+fn test_arithmetic_exec() {
     let context_json = r#"{"a": 1, "b":2, "c": 3, "d" : 2, "e" : 6, "f" : 2}"#;
     {
         let context_value: Value = serde_json::from_str(context_json).unwrap();
@@ -336,4 +336,19 @@ fn test_arithmetic() {
 
         assert_eq!(result, "g=5 h=6".to_string());
     }
+}
+
+#[test]
+fn test_while_exec() {
+    let executer = Executer::new(
+        Parser::parse(r#"<% a = 0; while a < 3 { if a == 1 { %>One <% } else { %>a = <%= a %> <% } a = a + 1 } %>"#).unwrap(),
+    )
+    .unwrap();
+
+    let mut context = Context {
+        context: Value::from(""),
+    };
+    let result = executer.render(&mut context).unwrap();
+
+    assert_eq!(result, "a = 0 One a = 2 ".to_string());
 }

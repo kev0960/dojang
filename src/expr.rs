@@ -169,10 +169,7 @@ impl<'a> Parser<'a> {
                 .find(&['&', '|', '(', ')', '!', '=', '<', '>', '+', '-', '*', '/'][..])
             {
                 Some(_) => {
-                    Parser::handle_operand(
-                        &template[token_begin..current],
-                        parse_tree.last_mut().unwrap(),
-                    );
+                    Parser::handle_operand(&template[token_begin..current], parse_tree);
 
                     match Parser::handle_operator(template, current, parse_tree.last_mut().unwrap())
                     {
@@ -328,16 +325,22 @@ impl<'a> Parser<'a> {
         } else if token == "else" {
             parse_tree.push(Action::Else());
         } else {
-            Parser::handle_operand(token, parse_tree.last_mut().unwrap());
+            Parser::handle_operand(token, parse_tree);
         }
     }
 
-    fn handle_operand(mut operand: &'a str, action: &mut Action<'a, Expr>) {
+    fn handle_operand(mut operand: &'a str, parse_tree: &mut Vec<Action<'a, Expr>>) {
         if operand.is_empty() {
             return;
         }
 
         operand = operand.trim();
+
+        if let Action::End() = parse_tree.last().unwrap() {
+            parse_tree.push(Action::Do(Expr { ops: Vec::new() }));
+        }
+
+        let action = parse_tree.last_mut().unwrap();
 
         let first_char = operand.chars().nth(0).unwrap();
         if first_char.is_ascii_digit() {

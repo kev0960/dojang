@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 use crate::eval::*;
 use crate::expr::*;
-use serde_json::Value;
+use serde_json::{Map, Value};
 
 #[derive(Debug)]
 pub struct Context {
@@ -54,6 +54,10 @@ impl Context {
                         "Local variable should not use dot operator. {:?}",
                         name
                     ));
+                }
+
+                if !self.context.is_object() {
+                    self.context = Value::Object(Map::new());
                 }
 
                 self.context.as_object_mut().unwrap().insert(
