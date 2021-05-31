@@ -3,6 +3,9 @@ name = "dojang"
 version = "0.1.0"
 authors = ["Jaebum Lee <kev0960@gmail.com>"]
 edition = "2018"
+description = "Dojang, a EJS like Html Template Engine."
+license = "MIT"
+keywords = ["html-template"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
