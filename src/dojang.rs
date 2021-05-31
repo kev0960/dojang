@@ -32,3 +32,30 @@ impl<'a> Dojang<'a> {
         }
     }
 }
+
+#[test]
+fn render() {
+    let template = "<% if a == 1 { %> Hi <% } else { %><%= a %><% } %>";
+    let mut dojang = Dojang::new();
+    assert!(dojang.add("some_template", template).is_ok());
+
+    assert_eq!(
+        dojang
+            .render(
+                "some_template",
+                serde_json::from_str(r#"{ "a" : 1 }"#).unwrap()
+            )
+            .unwrap(),
+        " Hi "
+    );
+
+    assert_eq!(
+        dojang
+            .render(
+                "some_template",
+                serde_json::from_str(r#"{ "a" : 2 }"#).unwrap()
+            )
+            .unwrap(),
+        "2"
+    );
+}
