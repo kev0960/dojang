@@ -9,6 +9,10 @@ pub struct Context {
 }
 
 impl Context {
+    pub fn new(context: Value) -> Self {
+        Context { context }
+    }
+
     fn get_value(&self, name: &str) -> Result<&Value, String> {
         let names = name.split(".").collect::<Vec<&str>>();
         if names.is_empty() {
@@ -35,6 +39,19 @@ impl Context {
         }
 
         Ok(value)
+    }
+
+    fn get_nth_from_array(&self, name: &str, index: usize) -> Result<Option<&Value>, String> {
+        let value = self.get_value(name)?;
+        match value {
+            Value::Array(arr) => Ok(arr.get(index)),
+            _ => {
+                return Err(format!(
+                    "in only works on the array; You gave : {:?}",
+                    value
+                ))
+            }
+        }
     }
 
     fn set_value(&mut self, name: &str, operand: Operand) -> Result<(), String> {
@@ -85,6 +102,7 @@ impl Context {
 
 pub trait ComputeExpr<'a> {
     fn run(&self, context: &'a mut Context) -> Result<Operand, String>;
+    fn run_for_loop(&self, context: &'a mut Context, for_index: usize) -> Result<bool, String>;
 }
 
 impl<'a> ComputeExpr<'a> for Eval {
@@ -141,6 +159,62 @@ impl<'a> ComputeExpr<'a> for Eval {
             operand => Ok(operand),
         }
     }
+
+    // Returns true if the for loop's condition is true.
+    fn run_for_loop(&self, context: &'a mut Context, for_index: usize) -> Result<bool, String> {
+        if self.expr.len() != 3 {
+            return Err(format!(
+                "For loop must use 'for a in b' format, yours use {:?}",
+                self.expr
+            ));
+        }
+
+        let object_name;
+        match self.expr.get(0).unwrap() {
+            Op::Operand(Operand::Object(object)) => {
+                object_name = &object.name;
+            }
+            _ => {
+                return Err(format!(
+                    "Range declaration in for loop must be an object; Yours : {:?}",
+                    self.expr
+                ))
+            }
+        }
+
+        if self.expr.get(1).unwrap()
+            != &Op::Operand(Operand::Object(Object {
+                name: "in".to_string(),
+            }))
+        {
+            return Err(format!(
+                "'in' is missing in your for-loop. Yours : {:?}",
+                self.expr
+            ));
+        }
+
+        let container_name;
+        match self.expr.get(2).unwrap() {
+            Op::Operand(Operand::Object(object)) => {
+                container_name = &object.name;
+            }
+            _ => {
+                return Err(format!(
+                    "Container in for loop must be an object; Yours : {:?}",
+                    self.expr
+                ))
+            }
+        }
+
+        match context.get_nth_from_array(&container_name, for_index)? {
+            Some(element) => {
+                let operand = convert_value_to_operand(element);
+                context.set_value(object_name, operand)?;
+                Ok(true)
+            }
+            _ => Ok(false),
+        }
+    }
 }
 
 pub trait Convert {
@@ -154,6 +228,7 @@ impl Convert for Operand {
             Operand::Literal(l) => !l.is_empty(),
             Operand::Number(n) => *n != 0,
             Operand::Decimal(d) => *d != 0.,
+            Operand::Array(arr) => !arr.is_empty(),
             _ => {
                 panic!("Unconvertible object {:?}", &self)
             }
@@ -165,6 +240,7 @@ impl Convert for Operand {
             Operand::Literal(l) => l.to_string(),
             Operand::Number(n) => n.to_string(),
             Operand::Decimal(d) => d.to_string(),
+            Operand::Array(arr) => format!("{:?}", arr),
             _ => {
                 panic!("Unconvertible object {:?}", &self)
             }
@@ -231,6 +307,14 @@ fn convert_value_to_operand(value: &Value) -> Operand {
             }
         }
         Value::String(s) => Operand::Literal(s.clone()),
+        Value::Array(arr) => {
+            let mut vec = Vec::new();
+            for elem in arr {
+                vec.push(convert_value_to_operand(&elem))
+            }
+
+            Operand::Array(vec)
+        }
         _ => {
             panic!("This should not happen")
         }
@@ -242,6 +326,13 @@ fn convert_operand_to_value(operand: Operand) -> Value {
         Operand::Number(n) => Value::from(n),
         Operand::Decimal(d) => Value::from(d),
         Operand::Literal(l) => Value::from(l),
+        Operand::Array(arr) => {
+            let mut vec = Vec::new();
+            for elem in arr {
+                vec.push(convert_operand_to_value(elem));
+            }
+            Value::from(vec)
+        }
         _ => {
             panic!("Unable to convert object to value.")
         }
@@ -374,7 +465,7 @@ fn compute_and(left: Operand, right: Operand) -> Result<Operand, String> {
         (Operand::Decimal(l), Operand::Decimal(r)) => {
             Ok(Operand::Number(((l != &0.) && (r != &0.)) as i64))
         }
-        _ => Err(format!("Type mismatch : {:?} {:?}", left, right)),
+        _ => Err(format!("Invalid operation between {:?} {:?}", left, right)),
     }
 }
 
@@ -389,7 +480,7 @@ fn compute_or(left: Operand, right: Operand) -> Result<Operand, String> {
         (Operand::Decimal(l), Operand::Decimal(r)) => {
             Ok(Operand::Number(((l != &0.) || (r != &0.)) as i64))
         }
-        _ => Err(format!("Type mismatch : {:?} {:?}", left, right)),
+        _ => Err(format!("Invalid operation between {:?} {:?}", left, right)),
     }
 }
 
@@ -398,7 +489,7 @@ fn compute_greater(left: Operand, right: Operand) -> Result<Operand, String> {
         (Operand::Literal(l), Operand::Literal(r)) => Ok(Operand::Number((l > r) as i64)),
         (Operand::Number(l), Operand::Number(r)) => Ok(Operand::Number((l > r) as i64)),
         (Operand::Decimal(l), Operand::Decimal(r)) => Ok(Operand::Number((l > r) as i64)),
-        _ => Err(format!("Type mismatch : {:?} {:?}", left, right)),
+        _ => Err(format!("Invalid operation between {:?} {:?}", left, right)),
     }
 }
 
@@ -407,7 +498,7 @@ fn compute_greater_eq(left: Operand, right: Operand) -> Result<Operand, String> 
         (Operand::Literal(l), Operand::Literal(r)) => Ok(Operand::Number((l >= r) as i64)),
         (Operand::Number(l), Operand::Number(r)) => Ok(Operand::Number((l >= r) as i64)),
         (Operand::Decimal(l), Operand::Decimal(r)) => Ok(Operand::Number((l >= r) as i64)),
-        _ => Err(format!("Type mismatch : {:?} {:?}", left, right)),
+        _ => Err(format!("Invalid operation between {:?} {:?}", left, right)),
     }
 }
 
@@ -416,7 +507,7 @@ fn compute_less(left: Operand, right: Operand) -> Result<Operand, String> {
         (Operand::Literal(l), Operand::Literal(r)) => Ok(Operand::Number((l < r) as i64)),
         (Operand::Number(l), Operand::Number(r)) => Ok(Operand::Number((l < r) as i64)),
         (Operand::Decimal(l), Operand::Decimal(r)) => Ok(Operand::Number((l < r) as i64)),
-        _ => Err(format!("Type mismatch : {:?} {:?}", left, right)),
+        _ => Err(format!("Invalid operation between {:?} {:?}", left, right)),
     }
 }
 
@@ -425,7 +516,7 @@ fn compute_less_eq(left: Operand, right: Operand) -> Result<Operand, String> {
         (Operand::Literal(l), Operand::Literal(r)) => Ok(Operand::Number((l <= r) as i64)),
         (Operand::Number(l), Operand::Number(r)) => Ok(Operand::Number((l <= r) as i64)),
         (Operand::Decimal(l), Operand::Decimal(r)) => Ok(Operand::Number((l <= r) as i64)),
-        _ => Err(format!("Type mismatch : {:?} {:?}", left, right)),
+        _ => Err(format!("Invalid operation between {:?} {:?}", left, right)),
     }
 }
 
@@ -434,7 +525,7 @@ fn compute_eq(left: Operand, right: Operand) -> Result<Operand, String> {
         (Operand::Literal(l), Operand::Literal(r)) => Ok(Operand::Number((l == r) as i64)),
         (Operand::Number(l), Operand::Number(r)) => Ok(Operand::Number((l == r) as i64)),
         (Operand::Decimal(l), Operand::Decimal(r)) => Ok(Operand::Number((l == r) as i64)),
-        _ => Err(format!("Type mismatch : {:?} {:?}", left, right)),
+        _ => Err(format!("Invalid operation between {:?} {:?}", left, right)),
     }
 }
 
@@ -443,7 +534,7 @@ fn compute_neq(left: Operand, right: Operand) -> Result<Operand, String> {
         (Operand::Literal(l), Operand::Literal(r)) => Ok(Operand::Number((l != r) as i64)),
         (Operand::Number(l), Operand::Number(r)) => Ok(Operand::Number((l != r) as i64)),
         (Operand::Decimal(l), Operand::Decimal(r)) => Ok(Operand::Number((l != r) as i64)),
-        _ => Err(format!("Type mismatch : {:?} {:?}", left, right)),
+        _ => Err(format!("Invalid operation between {:?} {:?}", left, right)),
     }
 }
 
@@ -455,7 +546,7 @@ fn compute_add(left: Operand, right: Operand) -> Result<Operand, String> {
         }
         (Operand::Number(l), Operand::Number(r)) => Ok(Operand::Number(l + r)),
         (Operand::Decimal(l), Operand::Decimal(r)) => Ok(Operand::Decimal(l + r)),
-        (left, right) => Err(format!("Type mismatch : {:?} {:?}", left, right)),
+        (left, right) => Err(format!("Invalid operation between {:?} {:?}", left, right)),
     }
 }
 
@@ -466,7 +557,7 @@ fn compute_minus(left: Operand, right: Operand) -> Result<Operand, String> {
         }
         (Operand::Number(l), Operand::Number(r)) => Ok(Operand::Number(l - r)),
         (Operand::Decimal(l), Operand::Decimal(r)) => Ok(Operand::Decimal(l - r)),
-        (left, right) => Err(format!("Type mismatch : {:?} {:?}", left, right)),
+        (left, right) => Err(format!("Invalid operation between {:?} {:?}", left, right)),
     }
 }
 
@@ -477,7 +568,7 @@ fn compute_multiply(left: Operand, right: Operand) -> Result<Operand, String> {
         }
         (Operand::Number(l), Operand::Number(r)) => Ok(Operand::Number(l * r)),
         (Operand::Decimal(l), Operand::Decimal(r)) => Ok(Operand::Decimal(l * r)),
-        (left, right) => Err(format!("Type mismatch : {:?} {:?}", left, right)),
+        (left, right) => Err(format!("Invalid operation between {:?} {:?}", left, right)),
     }
 }
 
@@ -488,7 +579,7 @@ fn compute_divide(left: Operand, right: Operand) -> Result<Operand, String> {
         }
         (Operand::Number(l), Operand::Number(r)) => Ok(Operand::Number(l / r)),
         (Operand::Decimal(l), Operand::Decimal(r)) => Ok(Operand::Decimal(l / r)),
-        (left, right) => Err(format!("Type mismatch : {:?} {:?}", left, right)),
+        (left, right) => Err(format!("Invalid operation between {:?} {:?}", left, right)),
     }
 }
 
@@ -518,9 +609,7 @@ fn get_expr<'a>(s: &'a str) -> Expr {
 fn compute_and_test() {
     let context_json = r#"{"a": 1, "b":0, "c":"abc", "d":"", "e": "def"}"#;
     let context_value: Value = serde_json::from_str(context_json).unwrap();
-    let mut context = Context {
-        context: context_value,
-    };
+    let mut context = Context::new(context_value);
 
     {
         let eval = Eval::new(get_expr(r"<% a && b %>")).unwrap();
@@ -546,9 +635,7 @@ fn compute_and_test() {
 fn compute_or_test() {
     let context_json = r#"{"a": 1, "b":0, "c":"abc", "d":"", "e": "def"}"#;
     let context_value: Value = serde_json::from_str(context_json).unwrap();
-    let mut context = Context {
-        context: context_value,
-    };
+    let mut context = Context::new(context_value);
 
     {
         let eval = Eval::new(get_expr(r"<% (a && b) || (c && e) %>")).unwrap();
@@ -574,9 +661,7 @@ fn compute_or_test() {
 fn compute_complex() {
     let context_json = r#"{"a": 1, "b":0, "c":"abc", "d":"", "e": "def"}"#;
     let context_value: Value = serde_json::from_str(context_json).unwrap();
-    let mut context = Context {
-        context: context_value,
-    };
+    let mut context = Context::new(context_value);
 
     {
         let eval = Eval::new(get_expr(r"<% !a && ((b != a) || c <= e) %>")).unwrap();
@@ -605,9 +690,7 @@ fn compute_complex() {
 fn compute_complex_object_name() {
     let context_json = r#"{"a": {"b" : 2, "c" : {"d" : 3 }}, "b" : 1}"#;
     let context_value: Value = serde_json::from_str(context_json).unwrap();
-    let mut context = Context {
-        context: context_value,
-    };
+    let mut context = Context::new(context_value);
 
     {
         let eval = Eval::new(get_expr(r"<% a.b %>")).unwrap();
@@ -634,9 +717,7 @@ fn compute_assign_test() {
     let context_json = r#"{"a": 1, "b":0, "c": 1}"#;
     {
         let context_value: Value = serde_json::from_str(context_json).unwrap();
-        let mut context = Context {
-            context: context_value,
-        };
+        let mut context = Context::new(context_value);
 
         let eval = Eval::new(get_expr(r"<% a = a && b %>")).unwrap();
         let result = eval.run(&mut context);
@@ -646,9 +727,7 @@ fn compute_assign_test() {
     }
     {
         let context_value: Value = serde_json::from_str(context_json).unwrap();
-        let mut context = Context {
-            context: context_value,
-        };
+        let mut context = Context::new(context_value);
 
         let eval = Eval::new(get_expr(r"<% a = a && c %>")).unwrap();
         let result = eval.run(&mut context);
@@ -658,9 +737,7 @@ fn compute_assign_test() {
     }
     {
         let context_value: Value = serde_json::from_str(context_json).unwrap();
-        let mut context = Context {
-            context: context_value,
-        };
+        let mut context = Context::new(context_value);
 
         let eval = Eval::new(get_expr(r"<% d = a && c %>")).unwrap();
         let result = eval.run(&mut context);
@@ -675,9 +752,7 @@ fn compute_arithmetic() {
     let context_json = r#"{"a": 1, "b":2, "c": 3, "d" : 2, "e" : 6, "f" : 2}"#;
     {
         let context_value: Value = serde_json::from_str(context_json).unwrap();
-        let mut context = Context {
-            context: context_value,
-        };
+        let mut context = Context::new(context_value);
 
         // (1 + 2 * 3 - 6 / 2) * 2
         let eval = Eval::new(get_expr(r"<% b = a = (a + b * c - e / d) * f %>")).unwrap();

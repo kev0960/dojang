@@ -19,6 +19,7 @@ pub enum Op {
     Multiply,   // *
     Divide,     // /
     Operand(Operand),
+    Iter(Iter),
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -26,7 +27,15 @@ pub enum Operand {
     Literal(String),
     Number(i64),
     Decimal(f64),
+    Array(Vec<Operand>),
     Object(Object),
+}
+
+#[derive(PartialEq, Debug)]
+// Iterator constructed by for .. in .. syntax. Tuple of (name of the array, index)
+pub struct Iter {
+    pub container: String,
+    pub index: usize,
 }
 
 // Name that will be found in the execution context.

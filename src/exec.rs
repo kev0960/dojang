@@ -3,6 +3,7 @@ use crate::context::*;
 use crate::eval::*;
 use crate::expr::*;
 use html_escape::encode_safe;
+#[cfg(test)]
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap};
 
@@ -143,6 +144,7 @@ impl<'a> Executer<'a> {
 
     pub fn render(&self, context: &'a mut Context) -> Result<String, String> {
         let mut rendered = String::new();
+        let mut for_index_counter = HashMap::new();
 
         let mut inst_index = 0;
         while inst_index < self.insts.len() {
@@ -158,11 +160,34 @@ impl<'a> Executer<'a> {
                         rendered.push_str(&Executer::run_eval(context, &eval)?);
                     }
                 },
-                Action::If(eval) | Action::While(eval) | Action::For(eval) => {
+                Action::If(eval) | Action::While(eval) => {
                     // Jump only if the condition is false. Otherwise just go to next instruction.
                     if !eval.run(context)?.is_true() {
                         if let Some(next) = self.jump_table.get(&inst_index) {
                             inst_index = *next;
+                            continue;
+                        } else {
+                            return Err(format!(
+                                "Jump of the if statement is not set: {:?} index : {}",
+                                self.insts, inst_index
+                            ));
+                        }
+                    }
+                }
+                Action::For(eval) => {
+                    let iter_index = match for_index_counter.get(&inst_index) {
+                        Some(index) => *index,
+                        None => 0usize,
+                    };
+
+                    for_index_counter.insert(inst_index, iter_index + 1);
+                    if !eval.run_for_loop(context, iter_index)? {
+                        if let Some(next) = self.jump_table.get(&inst_index) {
+                            // Reset the index counter.
+                            for_index_counter.insert(inst_index, 0);
+
+                            inst_index = *next;
+
                             continue;
                         } else {
                             return Err(format!(
@@ -319,9 +344,7 @@ fn test_arithmetic_exec() {
     let context_json = r#"{"a": 1, "b":2, "c": 3, "d" : 2, "e" : 6, "f" : 2}"#;
     {
         let context_value: Value = serde_json::from_str(context_json).unwrap();
-        let mut context = Context {
-            context: context_value,
-        };
+        let mut context = Context::new(context_value);
 
         // b = a = (1 + 2 * 3 - 6 / 2) * 2  == 8
         let executer = Executer::new(
@@ -345,10 +368,43 @@ fn test_while_exec() {
     )
     .unwrap();
 
-    let mut context = Context {
-        context: Value::from(""),
-    };
+    let mut context = Context::new(Value::from(""));
     let result = executer.render(&mut context).unwrap();
 
     assert_eq!(result, "a = 0 One a = 2 ".to_string());
+}
+
+#[test]
+fn test_for_in_statement() {
+    let executer =
+        Executer::new(Parser::parse(r#"<% for x in arr { %><%= x %> <% } %>"#).unwrap()).unwrap();
+
+    let context_json = r#"{"arr" : [1,2,3,4,5]}"#;
+    let context_value: Value = serde_json::from_str(context_json).unwrap();
+    let mut context = Context::new(context_value);
+
+    let result = executer.render(&mut context).unwrap();
+
+    assert_eq!(result, "1 2 3 4 5 ".to_string());
+}
+
+#[test]
+fn test_nested_for_in_statement() {
+    let executer = Executer::new(
+        Parser::parse(
+            r#"<% for x in arr { for y in arr2 { %><%= x %>*<%= y %>=<%= x * y %>,<% } } %>"#,
+        )
+        .unwrap(),
+    )
+    .unwrap();
+
+    let context_json = r#"{"arr" : [1,2,3,4,5], "arr2" : [1,2]}"#;
+    let context_value: Value = serde_json::from_str(context_json).unwrap();
+    let mut context = Context::new(context_value);
+
+    let result = executer.render(&mut context).unwrap();
+    assert_eq!(
+        result,
+        "1*1=1,1*2=2,2*1=2,2*2=4,3*1=3,3*2=6,4*1=4,4*2=8,5*1=5,5*2=10,".to_string()
+    );
 }
