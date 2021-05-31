@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use crate::expr::*;
 
 // Evaluate the parsed expression.
@@ -91,14 +89,6 @@ fn is_second_priority_higher(op1: &Op, op2: &Op) -> bool {
 
 fn is_second_priority_higher_or_equal(op1: &Op, op2: &Op) -> bool {
     return operator_priority(op1) >= operator_priority(op2);
-}
-
-fn is_only_unary(operands: &Vec<Op>) -> bool {
-    if operands.len() != 1 {
-        return false;
-    }
-
-    return operator_num_operands(&operands[0]) == 1;
 }
 
 #[test]

@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 use crate::eval::*;
 use crate::expr::*;
 use serde_json::{Map, Value};
@@ -418,6 +417,7 @@ fn compute_simple_assign(
     }
 }
 
+/*
 fn compute_binary_assign<ComputeFunc>(
     context: &mut Context,
     left: Operand,
@@ -453,6 +453,7 @@ where
         return Err(format!("Cannot assign to non-object {:?}", left));
     }
 }
+*/
 
 fn compute_and(left: Operand, right: Operand) -> Result<Operand, String> {
     match (&left, &right) {
@@ -590,10 +591,6 @@ fn compute_not(operand: Operand) -> Result<Operand, String> {
         Operand::Decimal(d) => Ok(Operand::Number((d == &0.) as i64)),
         _ => Err(format!("Invalid operation NOT {:?}", operand)),
     }
-}
-
-fn compute_assign(_left: Operand, right: Operand) -> Result<Operand, String> {
-    Ok(right)
 }
 
 #[cfg(test)]

@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 use crate::context::*;
 use crate::eval::*;
 use crate::expr::*;

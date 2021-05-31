@@ -1,12 +1,5 @@
 mod context;
+pub mod dojang;
 mod eval;
 mod exec;
 mod expr;
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        assert_eq!(2 + 2, 4);
-    }
-}

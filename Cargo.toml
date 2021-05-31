@@ -1,5 +1,5 @@
 [package]
-name = "ejs"
+name = "dojang"
 version = "0.1.0"
 authors = ["Jaebum Lee <kev0960@gmail.com>"]
 edition = "2018"

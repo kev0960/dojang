@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 #[derive(PartialEq, Debug)]
 pub enum Op {
     Not,        // !
@@ -19,7 +17,6 @@ pub enum Op {
     Multiply,   // *
     Divide,     // /
     Operand(Operand),
-    Iter(Iter),
 }
 
 #[derive(PartialEq, Debug, Clone)]
