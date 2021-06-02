@@ -7,8 +7,9 @@ use serde_json::Value;
 use std::collections::{BTreeMap, HashMap};
 
 // The executer that renders the template.
-pub struct Executer<'a> {
-    insts: Vec<Action<'a, Eval>>,
+#[derive(Debug)]
+pub struct Executer {
+    insts: Vec<Action<Eval>>,
 
     // Tells where the instructor point to jump
     // - For, If, While: Tells where to jump if the condition is false.
@@ -16,8 +17,8 @@ pub struct Executer<'a> {
     jump_table: HashMap<usize, usize>,
 }
 
-impl<'a> Executer<'a> {
-    pub fn new(mut parser: Parser<'a>) -> Result<Self, String> {
+impl Executer {
+    pub fn new(mut parser: Parser) -> Result<Self, String> {
         let mut insts = Vec::new();
 
         while !parser.parse_tree.is_empty() {
@@ -33,7 +34,7 @@ impl<'a> Executer<'a> {
         })
     }
 
-    fn compute_jump_table(insts: &Vec<Action<'a, Eval>>) -> Result<HashMap<usize, usize>, String> {
+    fn compute_jump_table(insts: &Vec<Action<Eval>>) -> Result<HashMap<usize, usize>, String> {
         let mut inst_index = 0;
 
         let mut jump_table = HashMap::new();
@@ -141,7 +142,7 @@ impl<'a> Executer<'a> {
         Ok(jump_table)
     }
 
-    pub fn render(&self, context: &'a mut Context) -> Result<String, String> {
+    pub fn render(&self, context: &mut Context, template: &str) -> Result<String, String> {
         let mut rendered = String::new();
         let mut for_index_counter = HashMap::new();
 
@@ -149,8 +150,8 @@ impl<'a> Executer<'a> {
         while inst_index < self.insts.len() {
             match self.insts.get(inst_index).unwrap() {
                 Action::Show(show) => match show {
-                    Show::Html(html) => {
-                        rendered.push_str(html);
+                    Show::Html { start, end } => {
+                        rendered.push_str(&template[*start..*end]);
                     }
                     Show::ExprEscaped(eval) => {
                         rendered.push_str(&*encode_safe(&Executer::run_eval(context, &eval)?));
@@ -224,10 +225,10 @@ impl<'a> Executer<'a> {
     }
 }
 
-fn convert_expr_to_eval<'a>(action: Action<'a, Expr>) -> Result<Action<'a, Eval>, String> {
+fn convert_expr_to_eval(action: Action<Expr>) -> Result<Action<Eval>, String> {
     match action {
         Action::Show(show) => match show {
-            Show::Html(html) => Ok(Action::Show(Show::Html(html))),
+            Show::Html { start, end } => Ok(Action::Show(Show::Html { start, end })),
             Show::ExprEscaped(expr) => Ok(Action::Show(Show::ExprEscaped(Eval::new(expr)?))),
             Show::ExprUnescaped(expr) => Ok(Action::Show(Show::ExprUnescaped(Eval::new(expr)?))),
         },
@@ -346,15 +347,9 @@ fn test_arithmetic_exec() {
         let mut context = Context::new(context_value);
 
         // b = a = (1 + 2 * 3 - 6 / 2) * 2  == 8
-        let executer = Executer::new(
-            Parser::parse(
-                r"<% b = a = (a + b * c - e / d) * f;e=a+b; if e == 16 { g = 5; h = 6} %>g=<%= g %> h=<%= h %>",
-            )
-            .unwrap(),
-        )
-        .unwrap();
-
-        let result = executer.render(&mut context).unwrap();
+        let template = r"<% b = a = (a + b * c - e / d) * f;e=a+b; if e == 16 { g = 5; h = 6} %>g=<%= g %> h=<%= h %>";
+        let executer = Executer::new(Parser::parse(template).unwrap()).unwrap();
+        let result = executer.render(&mut context, template).unwrap();
 
         assert_eq!(result, "g=5 h=6".to_string());
     }
@@ -362,46 +357,40 @@ fn test_arithmetic_exec() {
 
 #[test]
 fn test_while_exec() {
-    let executer = Executer::new(
-        Parser::parse(r#"<% a = 0; while a < 3 { if a == 1 { %>One <% } else { %>a = <%= a %> <% } a = a + 1 } %>"#).unwrap(),
-    )
-    .unwrap();
+    let template = r#"<% a = 0; while a < 3 { if a == 1 { %>One <% } else { %>a = <%= a %> <% } a = a + 1 } %>"#;
+    let executer = Executer::new(Parser::parse(template).unwrap()).unwrap();
 
     let mut context = Context::new(Value::from(""));
-    let result = executer.render(&mut context).unwrap();
+    let result = executer.render(&mut context, template).unwrap();
 
     assert_eq!(result, "a = 0 One a = 2 ".to_string());
 }
 
 #[test]
 fn test_for_in_statement() {
-    let executer =
-        Executer::new(Parser::parse(r#"<% for x in arr { %><%= x %> <% } %>"#).unwrap()).unwrap();
+    let template = r#"<% for x in arr { %><%= x %> <% } %>"#;
+    let executer = Executer::new(Parser::parse(template).unwrap()).unwrap();
 
     let context_json = r#"{"arr" : [1,2,3,4,5]}"#;
     let context_value: Value = serde_json::from_str(context_json).unwrap();
     let mut context = Context::new(context_value);
 
-    let result = executer.render(&mut context).unwrap();
+    let result = executer.render(&mut context, template).unwrap();
 
     assert_eq!(result, "1 2 3 4 5 ".to_string());
 }
 
 #[test]
 fn test_nested_for_in_statement() {
-    let executer = Executer::new(
-        Parser::parse(
-            r#"<% for x in arr { for y in arr2 { %><%= x %>*<%= y %>=<%= x * y %>,<% } } %>"#,
-        )
-        .unwrap(),
-    )
-    .unwrap();
+    let template =
+        r#"<% for x in arr { for y in arr2 { %><%= x %>*<%= y %>=<%= x * y %>,<% } } %>"#;
+    let executer = Executer::new(Parser::parse(template).unwrap()).unwrap();
 
     let context_json = r#"{"arr" : [1,2,3,4,5], "arr2" : [1,2]}"#;
     let context_value: Value = serde_json::from_str(context_json).unwrap();
     let mut context = Context::new(context_value);
 
-    let result = executer.render(&mut context).unwrap();
+    let result = executer.render(&mut context, template).unwrap();
     assert_eq!(
         result,
         "1*1=1,1*2=2,2*1=2,2*2=4,3*1=3,3*2=6,4*1=4,4*2=8,5*1=5,5*2=10,".to_string()

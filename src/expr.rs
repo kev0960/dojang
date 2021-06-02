@@ -28,13 +28,6 @@ pub enum Operand {
     Object(Object),
 }
 
-#[derive(PartialEq, Debug)]
-// Iterator constructed by for .. in .. syntax. Tuple of (name of the array, index)
-pub struct Iter {
-    pub container: String,
-    pub index: usize,
-}
-
 // Name that will be found in the execution context.
 #[derive(PartialEq, Debug, Clone)]
 pub struct Object {
@@ -47,8 +40,8 @@ pub struct Expr {
 }
 
 #[derive(PartialEq, Debug)]
-pub enum Action<'a, T> {
-    Show(Show<'a, T>),
+pub enum Action<T> {
+    Show(Show<T>),
     If(T),    // If condition
     While(T), // Loop condition
     For(T),   // For condition
@@ -57,7 +50,7 @@ pub enum Action<'a, T> {
     Do(T),
 }
 
-impl<'a> Action<'a, Expr> {
+impl Action<Expr> {
     pub fn add_op(&mut self, op: Op) {
         match self {
             Action::Show(show) => match show {
@@ -83,29 +76,36 @@ impl<'a> Action<'a, Expr> {
 }
 
 #[derive(PartialEq, Debug)]
-pub enum Show<'a, T> {
-    Html(&'a str),
+pub enum Show<T> {
+    Html { start: usize, end: usize }, // [start, end) of the original template.
     ExprEscaped(T),
     ExprUnescaped(T),
 }
 
 #[derive(PartialEq, Debug)]
-pub struct Parser<'a> {
-    pub parse_tree: Vec<Action<'a, Expr>>,
+pub struct Parser {
+    pub parse_tree: Vec<Action<Expr>>,
 }
 
-impl<'a> Parser<'a> {
-    pub fn parse(mut template: &'a str) -> Result<Self, String> {
+impl Parser {
+    pub fn parse(mut template: &str) -> Result<Self, String> {
         let mut parse_tree = Vec::new();
+
+        let mut index_offset = 0;
         while !template.is_empty() {
             match template.find("<%") {
                 Some(tag_start) => {
                     let before_tag = &template[..tag_start];
                     if !before_tag.is_empty() {
-                        parse_tree.push(Action::Show(Show::Html(before_tag)));
+                        parse_tree.push(Action::Show(Show::Html {
+                            start: index_offset,
+                            end: index_offset + tag_start,
+                        }));
                     }
 
                     let after_tag = &template[tag_start + 2..];
+                    index_offset += tag_start + 2;
+
                     match after_tag.find("%>") {
                         Some(tag_end) => {
                             let tag_to_parse;
@@ -135,6 +135,7 @@ impl<'a> Parser<'a> {
                                 _ => {}
                             }
                             template = &after_tag[tag_end + 2..];
+                            index_offset += tag_end + 2;
                         }
                         _ => {
                             return Err("Unmatched %> tag found".to_string());
@@ -142,7 +143,10 @@ impl<'a> Parser<'a> {
                     }
                 }
                 _ => {
-                    parse_tree.push(Action::Show(Show::Html(template)));
+                    parse_tree.push(Action::Show(Show::Html {
+                        start: index_offset,
+                        end: index_offset + template.len(),
+                    }));
                     break;
                 }
             }
@@ -151,7 +155,7 @@ impl<'a> Parser<'a> {
         Ok(Parser { parse_tree })
     }
 
-    fn parse_tag(template: &'a str, parse_tree: &mut Vec<Action<'a, Expr>>) -> Result<(), String> {
+    fn parse_tag(template: &str, parse_tree: &mut Vec<Action<Expr>>) -> Result<(), String> {
         let mut current = 0;
         let mut token_begin = 0;
 
@@ -211,7 +215,7 @@ impl<'a> Parser<'a> {
                         parse_tree.push(Action::Do(Expr { ops: Vec::new() }));
                     }
                     Action::Show(show) => match show {
-                        Show::Html(_) => {
+                        Show::Html { start: _, end: _ } => {
                             panic!("Show should not contain html");
                         }
                         Show::ExprUnescaped(expr) => {
@@ -241,9 +245,9 @@ impl<'a> Parser<'a> {
 
     // Returns the next of the end of the string literal.
     fn handle_string_literal(
-        template: &'a str,
+        template: &str,
         start: usize,
-        parse_tree: &mut Vec<Action<'a, Expr>>,
+        parse_tree: &mut Vec<Action<Expr>>,
     ) -> Result<usize, String> {
         assert!(template.chars().nth(start).unwrap() == '"');
         let string_literal_end;
@@ -286,9 +290,9 @@ impl<'a> Parser<'a> {
     }
 
     fn handle_operator(
-        template: &'a str,
+        template: &str,
         start: usize,
-        action: &mut Action<'a, Expr>,
+        action: &mut Action<Expr>,
     ) -> Result<usize, String> {
         // Check for the binary operators.
         if template.len() >= start + 2 {
@@ -321,7 +325,7 @@ impl<'a> Parser<'a> {
         Ok(start + 1)
     }
 
-    fn handle_token(token: &'a str, parse_tree: &mut Vec<Action<'a, Expr>>) {
+    fn handle_token(token: &str, parse_tree: &mut Vec<Action<Expr>>) {
         if token == "if" {
             parse_tree.push(Action::If(Expr { ops: Vec::new() }));
         } else if token == "while" {
@@ -335,7 +339,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn handle_operand(mut operand: &'a str, parse_tree: &mut Vec<Action<'a, Expr>>) {
+    fn handle_operand(mut operand: &str, parse_tree: &mut Vec<Action<Expr>>) {
         if operand.is_empty() {
             return;
         }
@@ -788,10 +792,11 @@ fn parse_for_statement() {
 
 #[test]
 fn parse_tags_simple() {
-    let result = Parser::parse(r#"<html><% if a { %>some tag<% } %>"#);
+    let template = r#"<html><% if a { %>some tag<% } %><body></body></html>"#;
+    let result = Parser::parse(template);
     let expected_expr = Parser {
         parse_tree: vec![
-            Action::Show(Show::Html("<html>")),
+            Action::Show(Show::Html { start: 0, end: 6 }),
             Action::Do(Expr { ops: vec![] }),
             Action::If(Expr {
                 ops: vec![Op::Operand(Operand::Object(Object {
@@ -799,13 +804,16 @@ fn parse_tags_simple() {
                 }))],
             }),
             Action::Do(Expr { ops: vec![] }),
-            Action::Show(Show::Html("some tag")),
+            Action::Show(Show::Html { start: 18, end: 26 }),
             Action::Do(Expr { ops: vec![] }),
             Action::End(),
+            Action::Show(Show::Html { start: 33, end: 53 }),
         ],
     };
 
     assert_eq!(result.unwrap(), expected_expr);
+    assert_eq!(&template[18..26], "some tag");
+    assert_eq!(&template[33..53], "<body></body></html>");
 }
 
 #[test]
@@ -813,7 +821,7 @@ fn parse_tags_escaped() {
     let result = Parser::parse(r#"<html><% if a { %><%= data %><% } %>"#);
     let expected_expr = Parser {
         parse_tree: vec![
-            Action::Show(Show::Html("<html>")),
+            Action::Show(Show::Html { start: 0, end: 6 }),
             Action::Do(Expr { ops: vec![] }),
             Action::If(Expr {
                 ops: vec![Op::Operand(Operand::Object(Object {
@@ -839,7 +847,7 @@ fn parse_multipe_expressions() {
     let result = Parser::parse(r#"<html><% a; b; c %><%= a; b %><%- a; b  %>"#);
     let expected_expr = Parser {
         parse_tree: vec![
-            Action::Show(Show::Html("<html>")),
+            Action::Show(Show::Html { start: 0, end: 6 }),
             Action::Do(Expr {
                 ops: vec![Op::Operand(Operand::Object(Object {
                     name: "a".to_string(),

@@ -11,19 +11,17 @@
 
 ## How to use?
 
-```
+```rust
 use dojang::Dojang;
 use serde_json::Value;
-
-let template = "<% if a == 1 { %> Hi <% } else { %><%= a %><% } %>";
 
 // Create a template engine Dojang.
 let mut dojang = Dojang::new();
 
-// Add a template file.
-assert!(dojang.add("some_template", template).is_ok());
+// Load template file under '/my/template/files'
+assert!(dojang.load("/my/template/files").is_ok());
 
-// Render a template. Note that the context should be provided as a serde_json value.
+// Render a template. "some_template" is the one of the template file under /my/template/files. // Note that the context should be provided as a serde_json value.
 assert_eq!(
     dojang
         .render(

@@ -5,7 +5,7 @@ authors = ["Jaebum Lee <kev0960@gmail.com>"]
 edition = "2018"
 description = "Dojang, a EJS like Html Template Engine."
 license = "MIT"
-keywords = ["html-template"]
+keywords = ["html-template", "html", "template"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
