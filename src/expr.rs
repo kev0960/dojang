@@ -130,6 +130,23 @@ impl Parser {
                                     })));
                                     tag_to_parse = &after_tag[1..tag_end];
                                 }
+                                '#' => {
+                                    // Ignore the comment.
+                                    template = &after_tag[tag_end + 2..];
+                                    index_offset += tag_end + 2;
+                                    continue;
+                                }
+                                '%' => {
+                                    // Show '%'.
+                                    parse_tree.push(Action::Show(Show::Html {
+                                        start: tag_start + 2,
+                                        end: tag_start + 3,
+                                    }));
+
+                                    template = &after_tag[tag_end + 2..];
+                                    index_offset += tag_end + 2;
+                                    continue;
+                                }
                                 _ => {
                                     parse_tree.push(Action::Do(Expr { ops: Vec::new() }));
                                     tag_to_parse = &after_tag[..tag_end];
@@ -900,6 +917,33 @@ fn parse_multipe_expressions() {
                     name: "b".to_string(),
                 }))],
             })),
+        ],
+    };
+
+    assert_eq!(result.unwrap(), expected_expr);
+}
+
+#[test]
+fn parse_ignore_comment() {
+    let result = Parser::parse(r#"<html><%# some comment %></html>"#);
+    let expected_expr = Parser {
+        parse_tree: vec![
+            Action::Show(Show::Html { start: 0, end: 6 }),
+            Action::Show(Show::Html { start: 25, end: 32 }),
+        ],
+    };
+
+    assert_eq!(result.unwrap(), expected_expr);
+}
+
+#[test]
+fn parse_percent_tag() {
+    let result = Parser::parse(r#"<html><%% %></html>"#);
+    let expected_expr = Parser {
+        parse_tree: vec![
+            Action::Show(Show::Html { start: 0, end: 6 }),
+            Action::Show(Show::Html { start: 8, end: 9 }),
+            Action::Show(Show::Html { start: 12, end: 19 }),
         ],
     };
 
