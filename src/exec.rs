@@ -13,8 +13,11 @@ pub struct Executer {
 
     // Tells where the instructor point to jump
     // - For, If, While: Tells where to jump if the condition is false.
-    // - End: Tells where to jump if hit.
+    // - End, Break, Continue: Tells where to jump if hit.
     jump_table: HashMap<usize, usize>,
+
+    // Mapping between index of "Break" and the corresponding For.
+    break_table: HashMap<usize, usize>,
 }
 
 impl Executer {
@@ -28,24 +31,44 @@ impl Executer {
 
         insts.reverse();
 
+        let (jump_table, break_table) = Executer::compute_jump_table(&insts)?;
         Ok(Executer {
-            jump_table: Executer::compute_jump_table(&insts)?,
+            jump_table,
+            break_table,
             insts,
         })
     }
 
-    fn compute_jump_table(insts: &Vec<Action<Eval>>) -> Result<HashMap<usize, usize>, String> {
+    fn compute_jump_table(
+        insts: &Vec<Action<Eval>>,
+    ) -> Result<(HashMap<usize, usize>, HashMap<usize, usize>), String> {
         let mut inst_index = 0;
 
         let mut jump_table = HashMap::new();
+        let mut break_table = HashMap::new();
+
         let mut if_matching_ends = BTreeMap::new();
+
+        // Every '{'.
         let mut opened = Vec::new();
+
+        // Every '{' for loops (for, while). This will be used by break and continue.
+        let mut loop_opened = Vec::new();
+
+        // Mapping bewteen location of break/continue to the corresponding loop.
+        let mut break_and_continue_pos = HashMap::new();
 
         while inst_index < insts.len() {
             match insts.get(inst_index).unwrap() {
                 Action::If(_) => opened.push(inst_index),
-                Action::While(_) => opened.push(inst_index),
-                Action::For(_) => opened.push(inst_index),
+                Action::While(_) => {
+                    opened.push(inst_index);
+                    loop_opened.push(inst_index);
+                }
+                Action::For(_) => {
+                    opened.push(inst_index);
+                    loop_opened.push(inst_index);
+                }
                 Action::Else() => {
                     if let Some(Action::If(_)) = insts.get(inst_index + 1) {
                         inst_index += 1;
@@ -54,7 +77,19 @@ impl Executer {
                         opened.push(inst_index)
                     }
                 }
+                Action::Do(eval) => {
+                    if let Some(keyword) = eval.get_keyword() {
+                        if keyword == Keyword::Break || keyword == Keyword::Continue {
+                            if loop_opened.is_empty() {
+                                return Err(
+                                    "Cannot break/continue within non-loop context.".to_string()
+                                );
+                            }
 
+                            break_and_continue_pos.insert(inst_index, *loop_opened.last().unwrap());
+                        }
+                    }
+                }
                 Action::End() => {
                     if opened.is_empty() {
                         return Err(format!(
@@ -95,6 +130,21 @@ impl Executer {
 
         if !opened.is_empty() {
             return Err(format!("No closing bracket found {:?}", insts));
+        }
+
+        // Handle break and continue.
+        for (keyword_index, loop_index) in break_and_continue_pos {
+            if let Action::Do(eval) = insts.get(keyword_index).unwrap() {
+                let keyword = eval.get_keyword().unwrap();
+                if keyword == Keyword::Continue {
+                    // For continue, then jump back to the start of the loop.
+                    jump_table.insert(keyword_index, loop_index);
+                } else if keyword == Keyword::Break {
+                    // For break, then jump back to the end of the loop.
+                    jump_table.insert(keyword_index, *jump_table.get(&loop_index).unwrap());
+                    break_table.insert(keyword_index, loop_index);
+                }
+            }
         }
 
         // Now scan again to handle if-else.
@@ -139,7 +189,7 @@ impl Executer {
             }
         }
 
-        Ok(jump_table)
+        Ok((jump_table, break_table))
     }
 
     pub fn render(&self, context: &mut Context, template: &str) -> Result<String, String> {
@@ -203,9 +253,22 @@ impl Executer {
                         continue;
                     }
                 }
-                Action::Do(eval) => {
-                    &Executer::run_eval(context, &eval)?;
-                }
+                Action::Do(eval) => match eval.get_keyword() {
+                    Some(Keyword::Break) => {
+                        // Reset the iter counter of the loop that we escape.
+                        for_index_counter.insert(*self.break_table.get(&inst_index).unwrap(), 0);
+
+                        inst_index = *self.jump_table.get(&inst_index).unwrap();
+                        continue;
+                    }
+                    Some(Keyword::Continue) => {
+                        inst_index = *self.jump_table.get(&inst_index).unwrap();
+                        continue;
+                    }
+                    _ => {
+                        &Executer::run_eval(context, &eval)?;
+                    }
+                },
                 Action::Else() => {}
             }
 
@@ -340,6 +403,31 @@ fn test_for_and_if() {
 }
 
 #[test]
+fn test_break_and_continue_jump_table() {
+    let executer = Executer::new(
+        Parser::parse(r#"<% for a in v { if a < 2 { break; } else { continue; } } %>"#).unwrap(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        executer.jump_table,
+        [
+            (1, 12),
+            (3, 7),
+            (4, 12),
+            (6, 11),
+            (7, 11),
+            (8, 1),
+            (10, 11),
+            (11, 1)
+        ]
+        .iter()
+        .cloned()
+        .collect()
+    )
+}
+
+#[test]
 fn test_arithmetic_exec() {
     let context_json = r#"{"a": 1, "b":2, "c": 3, "d" : 2, "e" : 6, "f" : 2}"#;
     {
@@ -395,4 +483,44 @@ fn test_nested_for_in_statement() {
         result,
         "1*1=1,1*2=2,2*1=2,2*2=4,3*1=3,3*2=6,4*1=4,4*2=8,5*1=5,5*2=10,".to_string()
     );
+}
+
+#[test]
+fn test_break() {
+    let template = r#"<% for a in v { if a > b { break; } %><%= a %> <% } %>"#;
+    let executer = Executer::new(Parser::parse(template).unwrap()).unwrap();
+
+    let context_json = r#"{"b" : 3, "v" : [1,2,3,4,5]}"#;
+    let context_value: Value = serde_json::from_str(context_json).unwrap();
+    let mut context = Context::new(context_value);
+
+    let result = executer.render(&mut context, template).unwrap();
+    assert_eq!(result, "1 2 3 ".to_string());
+}
+
+#[test]
+fn test_nested_break() {
+    let template =
+        r#"<% for a in v { for b in v { if a * b > 10 { break; } %><%= a * b %> <% } } %>"#;
+    let executer = Executer::new(Parser::parse(template).unwrap()).unwrap();
+
+    let context_json = r#"{"v" : [1,2,3,4,5]}"#;
+    let context_value: Value = serde_json::from_str(context_json).unwrap();
+    let mut context = Context::new(context_value);
+
+    let result = executer.render(&mut context, template).unwrap();
+    assert_eq!(result, "1 2 3 4 5 2 4 6 8 10 3 6 9 4 8 5 10 ".to_string());
+}
+
+#[test]
+fn test_continue() {
+    let template = r#"<% for a in v { if a == b { continue; } %><%= a %> <% } %>"#;
+    let executer = Executer::new(Parser::parse(template).unwrap()).unwrap();
+
+    let context_json = r#"{"b" : 3, "v" : [1,2,3,4,5]}"#;
+    let context_value: Value = serde_json::from_str(context_json).unwrap();
+    let mut context = Context::new(context_value);
+
+    let result = executer.render(&mut context, template).unwrap();
+    assert_eq!(result, "1 2 4 5 ".to_string());
 }

@@ -181,11 +181,7 @@ impl<'a> ComputeExpr<'a> for Eval {
             }
         }
 
-        if self.expr.get(1).unwrap()
-            != &Op::Operand(Operand::Object(Object {
-                name: "in".to_string(),
-            }))
-        {
+        if self.expr.get(1).unwrap() != &Op::Operand(Operand::Keyword(Keyword::In)) {
             return Err(format!(
                 "'in' is missing in your for-loop. Yours : {:?}",
                 self.expr

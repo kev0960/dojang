@@ -81,6 +81,20 @@ impl Eval {
     pub fn is_empty(&self) -> bool {
         self.expr.is_empty()
     }
+
+    pub fn get_keyword(&self) -> Option<Keyword> {
+        if self.expr.len() != 1 {
+            return None;
+        }
+
+        match self.expr.get(0).unwrap() {
+            Op::Operand(operand) => match operand {
+                Operand::Keyword(keyword) => Some(keyword.clone()),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
 }
 
 fn is_second_priority_higher(op1: &Op, op2: &Op) -> bool {

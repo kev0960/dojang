@@ -20,12 +20,20 @@ pub enum Op {
 }
 
 #[derive(PartialEq, Debug, Clone)]
+pub enum Keyword {
+    In,
+    Continue,
+    Break,
+}
+
+#[derive(PartialEq, Debug, Clone)]
 pub enum Operand {
     Literal(String),
     Number(i64),
     Decimal(f64),
     Array(Vec<Operand>),
     Object(Object),
+    Keyword(Keyword),
 }
 
 // Name that will be found in the execution context.
@@ -362,9 +370,20 @@ impl Parser {
                 action.add_op(Op::Operand(Operand::Number(operand.parse().unwrap_or(0))));
             }
         } else {
-            action.add_op(Op::Operand(Operand::Object(Object {
-                name: operand.to_string(),
-            })))
+            match operand {
+                "in" => {
+                    action.add_op(Op::Operand(Operand::Keyword(Keyword::In)));
+                }
+                "break" => {
+                    action.add_op(Op::Operand(Operand::Keyword(Keyword::Break)));
+                }
+                "continue" => {
+                    action.add_op(Op::Operand(Operand::Keyword(Keyword::Continue)));
+                }
+                _ => action.add_op(Op::Operand(Operand::Object(Object {
+                    name: operand.to_string(),
+                }))),
+            }
         }
     }
 }
@@ -772,9 +791,7 @@ fn parse_for_statement() {
                     Op::Operand(Operand::Object(Object {
                         name: "a".to_string(),
                     })),
-                    Op::Operand(Operand::Object(Object {
-                        name: "in".to_string(),
-                    })),
+                    Op::Operand(Operand::Keyword(Keyword::In)),
                     Op::Operand(Operand::Object(Object {
                         name: "vec".to_string(),
                     })),
