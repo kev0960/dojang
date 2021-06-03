@@ -109,10 +109,12 @@ impl Executer {
                         Action::For(_) => {
                             jump_table.insert(open_index, inst_index + 1);
                             jump_table.insert(inst_index, open_index);
+                            loop_opened.pop();
                         }
                         Action::While(_) => {
                             jump_table.insert(open_index, inst_index + 1);
                             jump_table.insert(inst_index, open_index);
+                            loop_opened.pop();
                         }
                         _ => {
                             return Err(format!(
@@ -428,6 +430,30 @@ fn test_break_and_continue_jump_table() {
 }
 
 #[test]
+fn test_nested_continue_jump_table() {
+    let template = r#"<% for a in v { for b in v { if a == b { continue; } %><%= b %><% } if a == 2 { continue } } %>"#;
+    let executer = Executer::new(Parser::parse(template).unwrap()).unwrap();
+
+    assert_eq!(
+        executer.jump_table,
+        [
+            (1, 16),
+            (3, 12),
+            (5, 9),
+            (6, 3),
+            (8, 9),
+            (11, 3),
+            (12, 15),
+            (13, 1),
+            (14, 15),
+            (15, 1)
+        ]
+        .iter()
+        .cloned()
+        .collect()
+    )
+}
+#[test]
 fn test_arithmetic_exec() {
     let context_json = r#"{"a": 1, "b":2, "c": 3, "d" : 2, "e" : 6, "f" : 2}"#;
     {
@@ -523,4 +549,17 @@ fn test_continue() {
 
     let result = executer.render(&mut context, template).unwrap();
     assert_eq!(result, "1 2 4 5 ".to_string());
+}
+
+#[test]
+fn test_nested_continue() {
+    let template = r#"<% for a in v { for b in v { if a == b { continue; } %><%= b %><% } if a == 2 { continue } } %>"#;
+    let executer = Executer::new(Parser::parse(template).unwrap()).unwrap();
+
+    let context_json = r#"{"v" : [1,2,3,4,5]}"#;
+    let context_value: Value = serde_json::from_str(context_json).unwrap();
+    let mut context = Context::new(context_value);
+
+    let result = executer.render(&mut context, template).unwrap();
+    assert_eq!(result, "23451345124512351234".to_string());
 }
