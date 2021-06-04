@@ -43,7 +43,7 @@ pub struct Object {
 }
 
 #[derive(PartialEq, Debug)]
-pub struct Expr {
+pub struct Tokens {
     pub ops: Vec<Op>,
 }
 
@@ -58,7 +58,7 @@ pub enum Action<T> {
     Do(T),
 }
 
-impl Action<Expr> {
+impl Action<Tokens> {
     pub fn add_op(&mut self, op: Op) {
         match self {
             Action::Show(show) => match show {
@@ -92,7 +92,7 @@ pub enum Show<T> {
 
 #[derive(PartialEq, Debug)]
 pub struct Parser {
-    pub parse_tree: Vec<Action<Expr>>,
+    pub parse_tree: Vec<Action<Tokens>>,
 }
 
 impl Parser {
@@ -119,13 +119,13 @@ impl Parser {
                             let tag_to_parse;
                             match template.chars().nth(tag_start + 2).unwrap() {
                                 '=' => {
-                                    parse_tree.push(Action::Show(Show::ExprEscaped(Expr {
+                                    parse_tree.push(Action::Show(Show::ExprEscaped(Tokens {
                                         ops: Vec::new(),
                                     })));
                                     tag_to_parse = &after_tag[1..tag_end];
                                 }
                                 '-' => {
-                                    parse_tree.push(Action::Show(Show::ExprUnescaped(Expr {
+                                    parse_tree.push(Action::Show(Show::ExprUnescaped(Tokens {
                                         ops: Vec::new(),
                                     })));
                                     tag_to_parse = &after_tag[1..tag_end];
@@ -148,7 +148,7 @@ impl Parser {
                                     continue;
                                 }
                                 _ => {
-                                    parse_tree.push(Action::Do(Expr { ops: Vec::new() }));
+                                    parse_tree.push(Action::Do(Tokens { ops: Vec::new() }));
                                     tag_to_parse = &after_tag[..tag_end];
                                 }
                             }
@@ -180,7 +180,7 @@ impl Parser {
         Ok(Parser { parse_tree })
     }
 
-    fn parse_tag(template: &str, parse_tree: &mut Vec<Action<Expr>>) -> Result<(), String> {
+    fn parse_tag(template: &str, parse_tree: &mut Vec<Action<Tokens>>) -> Result<(), String> {
         let mut current = 0;
         let mut token_begin = 0;
 
@@ -226,7 +226,7 @@ impl Parser {
                 token_begin = current + 1;
             } else if current_char == '{' {
                 Parser::handle_token(&template[token_begin..current], parse_tree);
-                parse_tree.push(Action::Do(Expr { ops: Vec::new() }));
+                parse_tree.push(Action::Do(Tokens { ops: Vec::new() }));
                 token_begin = current + 1;
             } else if current_char == '}' {
                 Parser::handle_token(&template[token_begin..current], parse_tree);
@@ -237,7 +237,7 @@ impl Parser {
                 match parse_tree.pop().unwrap() {
                     Action::Do(expr) => {
                         parse_tree.push(Action::Do(expr));
-                        parse_tree.push(Action::Do(Expr { ops: Vec::new() }));
+                        parse_tree.push(Action::Do(Tokens { ops: Vec::new() }));
                     }
                     Action::Show(show) => match show {
                         Show::Html { start: _, end: _ } => {
@@ -247,13 +247,14 @@ impl Parser {
                             // For <%= ... %> tags, only the last expression will be shown.
                             // In other words, <%= a; b %> is identical to <%= b %>
                             parse_tree.push(Action::Do(expr));
-                            parse_tree
-                                .push(Action::Show(Show::ExprUnescaped(Expr { ops: Vec::new() })))
+                            parse_tree.push(Action::Show(Show::ExprUnescaped(Tokens {
+                                ops: Vec::new(),
+                            })))
                         }
                         Show::ExprEscaped(expr) => {
                             parse_tree.push(Action::Do(expr));
                             parse_tree
-                                .push(Action::Show(Show::ExprEscaped(Expr { ops: Vec::new() })))
+                                .push(Action::Show(Show::ExprEscaped(Tokens { ops: Vec::new() })))
                         }
                     },
                     _ => return Err(format!("Invalid position of ; at {}", template)),
@@ -272,7 +273,7 @@ impl Parser {
     fn handle_string_literal(
         template: &str,
         start: usize,
-        parse_tree: &mut Vec<Action<Expr>>,
+        parse_tree: &mut Vec<Action<Tokens>>,
     ) -> Result<usize, String> {
         assert!(template.chars().nth(start).unwrap() == '"');
         let string_literal_end;
@@ -317,7 +318,7 @@ impl Parser {
     fn handle_operator(
         template: &str,
         start: usize,
-        action: &mut Action<Expr>,
+        action: &mut Action<Tokens>,
     ) -> Result<usize, String> {
         // Check for the binary operators.
         if template.len() >= start + 2 {
@@ -350,13 +351,13 @@ impl Parser {
         Ok(start + 1)
     }
 
-    fn handle_token(token: &str, parse_tree: &mut Vec<Action<Expr>>) {
+    fn handle_token(token: &str, parse_tree: &mut Vec<Action<Tokens>>) {
         if token == "if" {
-            parse_tree.push(Action::If(Expr { ops: Vec::new() }));
+            parse_tree.push(Action::If(Tokens { ops: Vec::new() }));
         } else if token == "while" {
-            parse_tree.push(Action::While(Expr { ops: Vec::new() }));
+            parse_tree.push(Action::While(Tokens { ops: Vec::new() }));
         } else if token == "for" {
-            parse_tree.push(Action::For(Expr { ops: Vec::new() }));
+            parse_tree.push(Action::For(Tokens { ops: Vec::new() }));
         } else if token == "else" {
             parse_tree.push(Action::Else());
         } else {
@@ -364,7 +365,7 @@ impl Parser {
         }
     }
 
-    fn handle_operand(mut operand: &str, parse_tree: &mut Vec<Action<Expr>>) {
+    fn handle_operand(mut operand: &str, parse_tree: &mut Vec<Action<Tokens>>) {
         if operand.is_empty() {
             return;
         }
@@ -372,7 +373,7 @@ impl Parser {
         operand = operand.trim();
 
         if let Action::End() = parse_tree.last().unwrap() {
-            parse_tree.push(Action::Do(Expr { ops: Vec::new() }));
+            parse_tree.push(Action::Do(Tokens { ops: Vec::new() }));
         }
 
         let action = parse_tree.last_mut().unwrap();
@@ -464,7 +465,7 @@ fn parse_simple_expr_with_binary() {
     let result = Parser::parse("<% some == 3 %>");
 
     let expected_expr = Parser {
-        parse_tree: vec![Action::Do(Expr {
+        parse_tree: vec![Action::Do(Tokens {
             ops: vec![
                 Op::Operand(Operand::Object(Object {
                     name: "some".to_string(),
@@ -482,7 +483,7 @@ fn parse_simple_expr_with_unary() {
     let result = Parser::parse("<% !some_value %>");
 
     let expected_expr = Parser {
-        parse_tree: vec![Action::Do(Expr {
+        parse_tree: vec![Action::Do(Tokens {
             ops: vec![
                 Op::Not,
                 Op::Operand(Operand::Object(Object {
@@ -500,7 +501,7 @@ fn parse_complex_binary_and_unary() {
     let result = Parser::parse("<% (a + b * c - e / d) * f %>");
 
     let expected_expr = Parser {
-        parse_tree: vec![Action::Do(Expr {
+        parse_tree: vec![Action::Do(Tokens {
             ops: vec![
                 Op::ParenOpen,
                 Op::Operand(Operand::Object(Object {
@@ -538,7 +539,7 @@ fn parse_complex_binary_and_unary() {
 fn parse_simple_literal() {
     let result = Parser::parse(r#"<% some_value == "abc" %>"#);
     let expected_expr = Parser {
-        parse_tree: vec![Action::Do(Expr {
+        parse_tree: vec![Action::Do(Tokens {
             ops: vec![
                 Op::Operand(Operand::Object(Object {
                     name: "some_value".to_string(),
@@ -556,7 +557,7 @@ fn parse_simple_literal() {
 fn parse_literal_with_escape() {
     let result = Parser::parse(r#"<% some_value == "a\"bc" abc %>"#);
     let expected_expr = Parser {
-        parse_tree: vec![Action::Do(Expr {
+        parse_tree: vec![Action::Do(Tokens {
             ops: vec![
                 Op::Operand(Operand::Object(Object {
                     name: "some_value".to_string(),
@@ -577,7 +578,7 @@ fn parse_literal_with_escape() {
 fn parse_complex_expr() {
     let result = Parser::parse("<% !some_value && ((var1 != var2) || some <= val) %>");
     let expected_expr = Parser {
-        parse_tree: vec![Action::Do(Expr {
+        parse_tree: vec![Action::Do(Tokens {
             ops: vec![
                 Op::Not,
                 Op::Operand(Operand::Object(Object {
@@ -614,7 +615,7 @@ fn parse_complex_expr() {
 fn parse_complex_expr2() {
     let result = Parser::parse(r"<% var1 >= var2 && var2 <= var3 || !var3  %>");
     let expected_expr = Parser {
-        parse_tree: vec![Action::Do(Expr {
+        parse_tree: vec![Action::Do(Tokens {
             ops: vec![
                 Op::Operand(Operand::Object(Object {
                     name: "var1".to_string(),
@@ -648,8 +649,8 @@ fn parse_if_statement() {
     let result = Parser::parse(r#"<% if var1 >= var2 && var3 < "}" { "hello" } %>"#);
     let expected_expr = Parser {
         parse_tree: vec![
-            Action::Do(Expr { ops: vec![] }),
-            Action::If(Expr {
+            Action::Do(Tokens { ops: vec![] }),
+            Action::If(Tokens {
                 ops: vec![
                     Op::Operand(Operand::Object(Object {
                         name: "var1".to_string(),
@@ -666,7 +667,7 @@ fn parse_if_statement() {
                     Op::Operand(Operand::Literal("}".to_string())),
                 ],
             }),
-            Action::Do(Expr {
+            Action::Do(Tokens {
                 ops: vec![Op::Operand(Operand::Literal("hello".to_string()))],
             }),
             Action::End(),
@@ -681,8 +682,8 @@ fn parse_multiple_if_statement() {
     let result = Parser::parse(r#"<% if var1>=var2{if var2>var3{} if !var1 {}} %>"#);
     let expected_expr = Parser {
         parse_tree: vec![
-            Action::Do(Expr { ops: vec![] }),
-            Action::If(Expr {
+            Action::Do(Tokens { ops: vec![] }),
+            Action::If(Tokens {
                 ops: vec![
                     Op::Operand(Operand::Object(Object {
                         name: "var1".to_string(),
@@ -693,8 +694,8 @@ fn parse_multiple_if_statement() {
                     })),
                 ],
             }),
-            Action::Do(Expr { ops: vec![] }),
-            Action::If(Expr {
+            Action::Do(Tokens { ops: vec![] }),
+            Action::If(Tokens {
                 ops: vec![
                     Op::Operand(Operand::Object(Object {
                         name: "var2".to_string(),
@@ -705,9 +706,9 @@ fn parse_multiple_if_statement() {
                     })),
                 ],
             }),
-            Action::Do(Expr { ops: vec![] }),
+            Action::Do(Tokens { ops: vec![] }),
             Action::End(),
-            Action::If(Expr {
+            Action::If(Tokens {
                 ops: vec![
                     Op::Not,
                     Op::Operand(Operand::Object(Object {
@@ -715,7 +716,7 @@ fn parse_multiple_if_statement() {
                     })),
                 ],
             }),
-            Action::Do(Expr { ops: vec![] }),
+            Action::Do(Tokens { ops: vec![] }),
             Action::End(),
             Action::End(),
         ],
@@ -729,8 +730,8 @@ fn parse_if_else_statement() {
     let result = Parser::parse(r#"<% if var1>=var2{ "b" } else if var1==3{"a"}else{"c"}%>"#);
     let expected_expr = Parser {
         parse_tree: vec![
-            Action::Do(Expr { ops: vec![] }),
-            Action::If(Expr {
+            Action::Do(Tokens { ops: vec![] }),
+            Action::If(Tokens {
                 ops: vec![
                     Op::Operand(Operand::Object(Object {
                         name: "var1".to_string(),
@@ -741,12 +742,12 @@ fn parse_if_else_statement() {
                     })),
                 ],
             }),
-            Action::Do(Expr {
+            Action::Do(Tokens {
                 ops: vec![Op::Operand(Operand::Literal("b".to_string()))],
             }),
             Action::End(),
             Action::Else(),
-            Action::If(Expr {
+            Action::If(Tokens {
                 ops: vec![
                     Op::Operand(Operand::Object(Object {
                         name: "var1".to_string(),
@@ -755,12 +756,12 @@ fn parse_if_else_statement() {
                     Op::Operand(Operand::Number(3)),
                 ],
             }),
-            Action::Do(Expr {
+            Action::Do(Tokens {
                 ops: vec![Op::Operand(Operand::Literal("a".to_string()))],
             }),
             Action::End(),
             Action::Else(),
-            Action::Do(Expr {
+            Action::Do(Tokens {
                 ops: vec![Op::Operand(Operand::Literal("c".to_string()))],
             }),
             Action::End(),
@@ -775,8 +776,8 @@ fn parse_while_statement() {
     let result = Parser::parse(r#"<% while var1 >= var2{ "hello"} %>"#);
     let expected_expr = Parser {
         parse_tree: vec![
-            Action::Do(Expr { ops: vec![] }),
-            Action::While(Expr {
+            Action::Do(Tokens { ops: vec![] }),
+            Action::While(Tokens {
                 ops: vec![
                     Op::Operand(Operand::Object(Object {
                         name: "var1".to_string(),
@@ -787,7 +788,7 @@ fn parse_while_statement() {
                     })),
                 ],
             }),
-            Action::Do(Expr {
+            Action::Do(Tokens {
                 ops: vec![Op::Operand(Operand::Literal("hello".to_string()))],
             }),
             Action::End(),
@@ -802,8 +803,8 @@ fn parse_for_statement() {
     let result = Parser::parse(r#"<% for a in vec{ "hello"} %>"#);
     let expected_expr = Parser {
         parse_tree: vec![
-            Action::Do(Expr { ops: vec![] }),
-            Action::For(Expr {
+            Action::Do(Tokens { ops: vec![] }),
+            Action::For(Tokens {
                 ops: vec![
                     Op::Operand(Operand::Object(Object {
                         name: "a".to_string(),
@@ -814,7 +815,7 @@ fn parse_for_statement() {
                     })),
                 ],
             }),
-            Action::Do(Expr {
+            Action::Do(Tokens {
                 ops: vec![Op::Operand(Operand::Literal("hello".to_string()))],
             }),
             Action::End(),
@@ -831,15 +832,15 @@ fn parse_tags_simple() {
     let expected_expr = Parser {
         parse_tree: vec![
             Action::Show(Show::Html { start: 0, end: 6 }),
-            Action::Do(Expr { ops: vec![] }),
-            Action::If(Expr {
+            Action::Do(Tokens { ops: vec![] }),
+            Action::If(Tokens {
                 ops: vec![Op::Operand(Operand::Object(Object {
                     name: "a".to_string(),
                 }))],
             }),
-            Action::Do(Expr { ops: vec![] }),
+            Action::Do(Tokens { ops: vec![] }),
             Action::Show(Show::Html { start: 18, end: 26 }),
-            Action::Do(Expr { ops: vec![] }),
+            Action::Do(Tokens { ops: vec![] }),
             Action::End(),
             Action::Show(Show::Html { start: 33, end: 53 }),
         ],
@@ -856,19 +857,19 @@ fn parse_tags_escaped() {
     let expected_expr = Parser {
         parse_tree: vec![
             Action::Show(Show::Html { start: 0, end: 6 }),
-            Action::Do(Expr { ops: vec![] }),
-            Action::If(Expr {
+            Action::Do(Tokens { ops: vec![] }),
+            Action::If(Tokens {
                 ops: vec![Op::Operand(Operand::Object(Object {
                     name: "a".to_string(),
                 }))],
             }),
-            Action::Do(Expr { ops: vec![] }),
-            Action::Show(Show::ExprEscaped(Expr {
+            Action::Do(Tokens { ops: vec![] }),
+            Action::Show(Show::ExprEscaped(Tokens {
                 ops: vec![Op::Operand(Operand::Object(Object {
                     name: "data".to_string(),
                 }))],
             })),
-            Action::Do(Expr { ops: vec![] }),
+            Action::Do(Tokens { ops: vec![] }),
             Action::End(),
         ],
     };
@@ -882,37 +883,37 @@ fn parse_multipe_expressions() {
     let expected_expr = Parser {
         parse_tree: vec![
             Action::Show(Show::Html { start: 0, end: 6 }),
-            Action::Do(Expr {
+            Action::Do(Tokens {
                 ops: vec![Op::Operand(Operand::Object(Object {
                     name: "a".to_string(),
                 }))],
             }),
-            Action::Do(Expr {
+            Action::Do(Tokens {
                 ops: vec![Op::Operand(Operand::Object(Object {
                     name: "b".to_string(),
                 }))],
             }),
-            Action::Do(Expr {
+            Action::Do(Tokens {
                 ops: vec![Op::Operand(Operand::Object(Object {
                     name: "c".to_string(),
                 }))],
             }),
-            Action::Do(Expr {
+            Action::Do(Tokens {
                 ops: vec![Op::Operand(Operand::Object(Object {
                     name: "a".to_string(),
                 }))],
             }),
-            Action::Show(Show::ExprEscaped(Expr {
+            Action::Show(Show::ExprEscaped(Tokens {
                 ops: vec![Op::Operand(Operand::Object(Object {
                     name: "b".to_string(),
                 }))],
             })),
-            Action::Do(Expr {
+            Action::Do(Tokens {
                 ops: vec![Op::Operand(Operand::Object(Object {
                     name: "a".to_string(),
                 }))],
             }),
-            Action::Show(Show::ExprUnescaped(Expr {
+            Action::Show(Show::ExprUnescaped(Tokens {
                 ops: vec![Op::Operand(Operand::Object(Object {
                     name: "b".to_string(),
                 }))],

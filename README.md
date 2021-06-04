@@ -1,5 +1,7 @@
 # Dojang
 
+![Test and Coverage](https://github.com/kev0960/dojang/actions/workflows/test.yaml/badge.svg)
+
 [crates.io]: https://crates.io/crates/dojang
 
 **Dojang** is a Html template engine, as a drop in replacement for [EJS](https://ejs.co/). Though it does not supports 100% of the javascript syntax, it supports enough to cover the basic usages.
@@ -47,5 +49,4 @@ assert_eq!(
 
 * Support for file includes (<%- .. >)
 * Function calling.
-* break, continue keywords.
 * Optimization.

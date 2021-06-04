@@ -290,7 +290,7 @@ impl Executer {
     }
 }
 
-fn convert_expr_to_eval(action: Action<Expr>) -> Result<Action<Eval>, String> {
+fn convert_expr_to_eval(action: Action<Tokens>) -> Result<Action<Eval>, String> {
     match action {
         Action::Show(show) => match show {
             Show::Html { start, end } => Ok(Action::Show(Show::Html { start, end })),
@@ -554,6 +554,19 @@ fn test_continue() {
 #[test]
 fn test_nested_continue() {
     let template = r#"<% for a in v { for b in v { if a == b { continue; } %><%= b %><% } if a == 2 { continue } } %>"#;
+    let executer = Executer::new(Parser::parse(template).unwrap()).unwrap();
+
+    let context_json = r#"{"v" : [1,2,3,4,5]}"#;
+    let context_value: Value = serde_json::from_str(context_json).unwrap();
+    let mut context = Context::new(context_value);
+
+    let result = executer.render(&mut context, template).unwrap();
+    assert_eq!(result, "23451345124512351234".to_string());
+}
+
+#[test]
+fn test_function() {
+    let template = r#"<% func(a, b) %>"#;
     let executer = Executer::new(Parser::parse(template).unwrap()).unwrap();
 
     let context_json = r#"{"v" : [1,2,3,4,5]}"#;

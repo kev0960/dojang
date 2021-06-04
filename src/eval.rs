@@ -7,7 +7,7 @@ pub struct Eval {
 }
 
 impl Eval {
-    pub fn new(mut expr: Expr) -> Result<Eval, String> {
+    pub fn new(mut expr: Tokens) -> Result<Eval, String> {
         let mut operands: Vec<Vec<Op>> = Vec::new();
         let mut operators = Vec::new();
 
@@ -107,7 +107,7 @@ fn is_second_priority_higher_or_equal(op1: &Op, op2: &Op) -> bool {
 
 #[test]
 fn create_simple_unary() {
-    let expr = Expr {
+    let expr = Tokens {
         ops: vec![
             Op::Not,
             Op::Operand(Operand::Object(Object {
@@ -130,7 +130,7 @@ fn create_simple_unary() {
 
 #[test]
 fn create_multiple_unary_expr() {
-    let expr = Expr {
+    let expr = Tokens {
         ops: vec![
             Op::Not,
             Op::Not,
@@ -156,7 +156,7 @@ fn create_multiple_unary_expr() {
 
 #[test]
 fn create_simple_binary_expr() {
-    let expr = Expr {
+    let expr = Tokens {
         ops: vec![
             Op::Operand(Operand::Object(Object {
                 name: "some".to_string(),
@@ -180,7 +180,7 @@ fn create_simple_binary_expr() {
 
 #[test]
 fn create_binary_with_unary_expr() {
-    let expr = Expr {
+    let expr = Tokens {
         ops: vec![
             Op::Operand(Operand::Object(Object {
                 name: "some".to_string(),
@@ -208,7 +208,7 @@ fn create_binary_with_unary_expr() {
 
 #[test]
 fn create_complex_expr() {
-    let expr = Expr {
+    let expr = Tokens {
         ops: vec![
             Op::Not,
             Op::Operand(Operand::Object(Object {
@@ -268,7 +268,7 @@ fn create_complex_expr() {
 
 #[test]
 fn create_complex_expr2() {
-    let expr = Expr {
+    let expr = Tokens {
         ops: vec![
             Op::Operand(Operand::Object(Object {
                 name: "var1".to_string(),
@@ -322,7 +322,7 @@ fn create_complex_expr2() {
 
 #[test]
 fn check_assign_op() {
-    let expr = Expr {
+    let expr = Tokens {
         ops: vec![
             Op::Operand(Operand::Object(Object {
                 name: "a".to_string(),
@@ -354,7 +354,7 @@ fn check_assign_op() {
 
 #[test]
 fn check_multiple_assign() {
-    let expr = Expr {
+    let expr = Tokens {
         ops: vec![
             Op::Operand(Operand::Object(Object {
                 name: "a".to_string(),
@@ -389,7 +389,7 @@ fn check_multiple_assign() {
 }
 #[test]
 fn arithmetic_expression() {
-    let expr = Expr {
+    let expr = Tokens {
         ops: vec![
             Op::ParenOpen,
             Op::Operand(Operand::Object(Object {

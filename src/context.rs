@@ -590,7 +590,7 @@ fn compute_not(operand: Operand) -> Result<Operand, String> {
 }
 
 #[cfg(test)]
-fn get_expr<'a>(s: &'a str) -> Expr {
+fn get_expr<'a>(s: &'a str) -> Tokens {
     let mut res = Parser::parse(s).unwrap();
     match res.parse_tree.pop().unwrap() {
         Action::Do(expr) => expr,
