@@ -16,6 +16,7 @@ pub enum Op {
     Minus,      // -
     Multiply,   // *
     Divide,     // /
+    Comma,      // ,
     Operand(Operand),
 }
 
@@ -34,6 +35,7 @@ pub enum Operand {
     Array(Vec<Operand>),
     Object(Object),
     Keyword(Keyword),
+    Function(String),
 }
 
 // Name that will be found in the execution context.
@@ -200,9 +202,11 @@ impl Parser {
             }
 
             // Handle Operators.
-            match template[current..current + 1]
-                .find(&['&', '|', '(', ')', '!', '=', '<', '>', '+', '-', '*', '/'][..])
-            {
+            match template[current..current + 1].find(
+                &[
+                    '&', '|', '(', ')', '!', '=', '<', '>', '+', '-', '*', '/', ',',
+                ][..],
+            ) {
                 Some(_) => {
                     Parser::handle_operand(&template[token_begin..current], parse_tree);
 
@@ -340,6 +344,7 @@ impl Parser {
             '-' => action.add_op(Op::Minus),
             '*' => action.add_op(Op::Multiply),
             '/' => action.add_op(Op::Divide),
+            ',' => action.add_op(Op::Comma),
             c => {
                 return Err(format!(
                     "Unknown operator at '{}', unknown : {}",
@@ -820,6 +825,39 @@ fn parse_for_statement() {
             }),
             Action::End(),
         ],
+    };
+
+    assert_eq!(result.unwrap(), expected_expr);
+}
+
+#[test]
+fn parse_function() {
+    let result = Parser::parse(r#"<% func(1+1, a, b) + x %>"#);
+    let expected_expr = Parser {
+        parse_tree: vec![Action::Do(Tokens {
+            ops: vec![
+                Op::Operand(Operand::Object(Object {
+                    name: "func".to_string(),
+                })),
+                Op::ParenOpen,
+                Op::Operand(Operand::Number(1)),
+                Op::Plus,
+                Op::Operand(Operand::Number(1)),
+                Op::Comma,
+                Op::Operand(Operand::Object(Object {
+                    name: "a".to_string(),
+                })),
+                Op::Comma,
+                Op::Operand(Operand::Object(Object {
+                    name: "b".to_string(),
+                })),
+                Op::ParenClose,
+                Op::Plus,
+                Op::Operand(Operand::Object(Object {
+                    name: "x".to_string(),
+                })),
+            ],
+        })],
     };
 
     assert_eq!(result.unwrap(), expected_expr);

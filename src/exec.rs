@@ -194,7 +194,12 @@ impl Executer {
         Ok((jump_table, break_table))
     }
 
-    pub fn render(&self, context: &mut Context, template: &str) -> Result<String, String> {
+    pub fn render(
+        &self,
+        context: &mut Context,
+        functions: &HashMap<String, FunctionContainer>,
+        template: &str,
+    ) -> Result<String, String> {
         let mut rendered = String::new();
         let mut for_index_counter = HashMap::new();
 
@@ -206,15 +211,17 @@ impl Executer {
                         rendered.push_str(&template[*start..*end]);
                     }
                     Show::ExprEscaped(eval) => {
-                        rendered.push_str(&*encode_safe(&Executer::run_eval(context, &eval)?));
+                        rendered.push_str(&*encode_safe(&Executer::run_eval(
+                            context, functions, &eval,
+                        )?));
                     }
                     Show::ExprUnescaped(eval) => {
-                        rendered.push_str(&Executer::run_eval(context, &eval)?);
+                        rendered.push_str(&Executer::run_eval(context, functions, &eval)?);
                     }
                 },
                 Action::If(eval) | Action::While(eval) => {
                     // Jump only if the condition is false. Otherwise just go to next instruction.
-                    if !eval.run(context)?.is_true() {
+                    if !eval.run(context, functions)?.is_true() {
                         if let Some(next) = self.jump_table.get(&inst_index) {
                             inst_index = *next;
                             continue;
@@ -268,7 +275,7 @@ impl Executer {
                         continue;
                     }
                     _ => {
-                        &Executer::run_eval(context, &eval)?;
+                        &Executer::run_eval(context, functions, &eval)?;
                     }
                 },
                 Action::Else() => {}
@@ -281,12 +288,16 @@ impl Executer {
     }
 
     // Runs Eval if it is not empty.
-    fn run_eval(context: &mut Context, eval: &Eval) -> Result<String, String> {
+    fn run_eval(
+        context: &mut Context,
+        functions: &HashMap<String, FunctionContainer>,
+        eval: &Eval,
+    ) -> Result<String, String> {
         if eval.is_empty() {
             return Ok("".to_string());
         }
 
-        Ok(eval.run(context)?.to_str())
+        Ok(eval.run(context, functions)?.to_str())
     }
 }
 
@@ -463,7 +474,9 @@ fn test_arithmetic_exec() {
         // b = a = (1 + 2 * 3 - 6 / 2) * 2  == 8
         let template = r"<% b = a = (a + b * c - e / d) * f;e=a+b; if e == 16 { g = 5; h = 6} %>g=<%= g %> h=<%= h %>";
         let executer = Executer::new(Parser::parse(template).unwrap()).unwrap();
-        let result = executer.render(&mut context, template).unwrap();
+        let result = executer
+            .render(&mut context, &HashMap::new(), template)
+            .unwrap();
 
         assert_eq!(result, "g=5 h=6".to_string());
     }
@@ -475,7 +488,9 @@ fn test_while_exec() {
     let executer = Executer::new(Parser::parse(template).unwrap()).unwrap();
 
     let mut context = Context::new(Value::from(""));
-    let result = executer.render(&mut context, template).unwrap();
+    let result = executer
+        .render(&mut context, &HashMap::new(), template)
+        .unwrap();
 
     assert_eq!(result, "a = 0 One a = 2 ".to_string());
 }
@@ -489,7 +504,9 @@ fn test_for_in_statement() {
     let context_value: Value = serde_json::from_str(context_json).unwrap();
     let mut context = Context::new(context_value);
 
-    let result = executer.render(&mut context, template).unwrap();
+    let result = executer
+        .render(&mut context, &HashMap::new(), template)
+        .unwrap();
 
     assert_eq!(result, "1 2 3 4 5 ".to_string());
 }
@@ -504,7 +521,9 @@ fn test_nested_for_in_statement() {
     let context_value: Value = serde_json::from_str(context_json).unwrap();
     let mut context = Context::new(context_value);
 
-    let result = executer.render(&mut context, template).unwrap();
+    let result = executer
+        .render(&mut context, &HashMap::new(), template)
+        .unwrap();
     assert_eq!(
         result,
         "1*1=1,1*2=2,2*1=2,2*2=4,3*1=3,3*2=6,4*1=4,4*2=8,5*1=5,5*2=10,".to_string()
@@ -520,7 +539,9 @@ fn test_break() {
     let context_value: Value = serde_json::from_str(context_json).unwrap();
     let mut context = Context::new(context_value);
 
-    let result = executer.render(&mut context, template).unwrap();
+    let result = executer
+        .render(&mut context, &HashMap::new(), template)
+        .unwrap();
     assert_eq!(result, "1 2 3 ".to_string());
 }
 
@@ -534,7 +555,9 @@ fn test_nested_break() {
     let context_value: Value = serde_json::from_str(context_json).unwrap();
     let mut context = Context::new(context_value);
 
-    let result = executer.render(&mut context, template).unwrap();
+    let result = executer
+        .render(&mut context, &HashMap::new(), template)
+        .unwrap();
     assert_eq!(result, "1 2 3 4 5 2 4 6 8 10 3 6 9 4 8 5 10 ".to_string());
 }
 
@@ -547,7 +570,9 @@ fn test_continue() {
     let context_value: Value = serde_json::from_str(context_json).unwrap();
     let mut context = Context::new(context_value);
 
-    let result = executer.render(&mut context, template).unwrap();
+    let result = executer
+        .render(&mut context, &HashMap::new(), template)
+        .unwrap();
     assert_eq!(result, "1 2 4 5 ".to_string());
 }
 
@@ -560,19 +585,88 @@ fn test_nested_continue() {
     let context_value: Value = serde_json::from_str(context_json).unwrap();
     let mut context = Context::new(context_value);
 
-    let result = executer.render(&mut context, template).unwrap();
+    let result = executer
+        .render(&mut context, &HashMap::new(), template)
+        .unwrap();
     assert_eq!(result, "23451345124512351234".to_string());
 }
 
 #[test]
 fn test_function() {
-    let template = r#"<% func(a, b) %>"#;
+    let template = r#"<%= func(a, b) %>"#;
     let executer = Executer::new(Parser::parse(template).unwrap()).unwrap();
 
-    let context_json = r#"{"v" : [1,2,3,4,5]}"#;
+    let context_json = r#"{"a" : 10, "b" : 20}"#;
     let context_value: Value = serde_json::from_str(context_json).unwrap();
     let mut context = Context::new(context_value);
 
-    let result = executer.render(&mut context, template).unwrap();
-    assert_eq!(result, "23451345124512351234".to_string());
+    let mut functions = HashMap::new();
+    functions.insert(
+        "func".to_string(),
+        FunctionContainer::F2(|a: Value, b: Value| -> Value {
+            Value::Number(serde_json::Number::from(
+                a.as_i64().unwrap() + b.as_i64().unwrap(),
+            ))
+        }),
+    );
+
+    let result = executer.render(&mut context, &functions, template).unwrap();
+    assert_eq!(result, "30".to_string());
+}
+
+#[test]
+fn test_function_complex() {
+    // (12 + 10 * 20 - 2 + 1 + 3) * 2
+    let template = r#"<%= func(func(2, a), func(1+func2(a, b, 2), 3)) * 2 %>"#;
+    let executer = Executer::new(Parser::parse(template).unwrap()).unwrap();
+
+    let context_json = r#"{"a" : 10, "b" : 20}"#;
+    let context_value: Value = serde_json::from_str(context_json).unwrap();
+    let mut context = Context::new(context_value);
+
+    let mut functions = HashMap::new();
+    functions.insert(
+        "func".to_string(),
+        FunctionContainer::F2(|a: Value, b: Value| -> Value {
+            Value::Number(serde_json::Number::from(
+                a.as_i64().unwrap() + b.as_i64().unwrap(),
+            ))
+        }),
+    );
+
+    functions.insert(
+        "func2".to_string(),
+        FunctionContainer::F3(|a: Value, b: Value, c: Value| -> Value {
+            Value::Number(serde_json::Number::from(
+                a.as_i64().unwrap() * b.as_i64().unwrap() - c.as_i64().unwrap(),
+            ))
+        }),
+    );
+
+    let result = executer.render(&mut context, &functions, template).unwrap();
+    assert_eq!(result, "428".to_string());
+}
+
+#[test]
+fn test_function_with_statements() {
+    let template =
+        r#"<%= while func(a, b) < 10 { a = a + 1; %>(<%= a %>, <%= b %>) <% b = b + 1 } %>"#;
+    let executer = Executer::new(Parser::parse(template).unwrap()).unwrap();
+
+    let context_json = r#"{"a" : 1, "b" : 2}"#;
+    let context_value: Value = serde_json::from_str(context_json).unwrap();
+    let mut context = Context::new(context_value);
+
+    let mut functions = HashMap::new();
+    functions.insert(
+        "func".to_string(),
+        FunctionContainer::F2(|a: Value, b: Value| -> Value {
+            Value::Number(serde_json::Number::from(
+                a.as_i64().unwrap() + b.as_i64().unwrap(),
+            ))
+        }),
+    );
+
+    let result = executer.render(&mut context, &functions, template).unwrap();
+    assert_eq!(result, "(2, 2) (3, 3) (4, 4) (5, 5) ".to_string());
 }

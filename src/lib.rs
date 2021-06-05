@@ -8,4 +8,5 @@ mod eval;
 mod exec;
 mod expr;
 
+pub use crate::context::FunctionContainer;
 pub use crate::dojang::Dojang;

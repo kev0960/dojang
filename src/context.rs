@@ -1,10 +1,47 @@
 use crate::eval::*;
 use crate::expr::*;
 use serde_json::{Map, Value};
+use std::collections::HashMap;
+use std::fmt;
 
 #[derive(Debug)]
 pub struct Context {
     pub context: Value,
+}
+
+pub enum FunctionContainer {
+    F0(fn() -> Value),
+    F1(fn(Value) -> Value),
+    F2(fn(Value, Value) -> Value),
+    F3(fn(Value, Value, Value) -> Value),
+    F4(fn(Value, Value, Value, Value) -> Value),
+}
+
+impl fmt::Debug for FunctionContainer {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut f = f.debug_struct("FunctionContainer");
+        match self {
+            FunctionContainer::F0(_) => f.field("F0", &1),
+            FunctionContainer::F1(_) => f.field("F1", &1),
+            FunctionContainer::F2(_) => f.field("F2", &1),
+            FunctionContainer::F3(_) => f.field("F3", &1),
+            FunctionContainer::F4(_) => f.field("F4", &1),
+        };
+
+        f.finish()
+    }
+}
+
+impl FunctionContainer {
+    pub fn param_num(&self) -> usize {
+        match self {
+            FunctionContainer::F0(_) => 0,
+            FunctionContainer::F1(_) => 1,
+            FunctionContainer::F2(_) => 2,
+            FunctionContainer::F3(_) => 3,
+            FunctionContainer::F4(_) => 4,
+        }
+    }
 }
 
 impl Context {
@@ -99,49 +136,122 @@ impl Context {
     }
 }
 
-pub trait ComputeExpr<'a> {
-    fn run(&self, context: &'a mut Context) -> Result<Operand, String>;
-    fn run_for_loop(&self, context: &'a mut Context, for_index: usize) -> Result<bool, String>;
+pub trait ComputeExpr {
+    fn run(
+        &self,
+        context: &mut Context,
+        functions: &HashMap<String, FunctionContainer>,
+    ) -> Result<Operand, String>;
+    fn run_for_loop(&self, context: &mut Context, for_index: usize) -> Result<bool, String>;
 }
 
-impl<'a> ComputeExpr<'a> for Eval {
-    fn run(&self, context: &'a mut Context) -> Result<Operand, String> {
+impl ComputeExpr for Eval {
+    fn run(
+        &self,
+        context: &mut Context,
+        functions: &HashMap<String, FunctionContainer>,
+    ) -> Result<Operand, String> {
         let mut operands: Vec<Operand> = Vec::new();
 
-        for op in self.expr.iter().rev() {
-            match op {
-                Op::Operand(operand) => {
-                    operands.push(operand.clone());
-                }
-                optr => {
-                    let num_operands = operator_num_operands(optr);
-                    if operands.len() < num_operands {
-                        return Err(format!(
-                            "Number of operands for {:?} is less than {}",
-                            optr, num_operands
-                        ));
+        for expr in self.expr.iter().rev() {
+            match expr {
+                Expr::Op(op) => match op {
+                    Op::Operand(operand) => {
+                        operands.push(operand.clone());
+                    }
+                    optr => {
+                        let num_operands = operator_num_operands(optr);
+                        if operands.len() < num_operands {
+                            return Err(format!(
+                                "Number of operands for {:?} is less than {}",
+                                optr, num_operands
+                            ));
+                        }
+
+                        if num_operands == 1 {
+                            let op = operands.pop().unwrap();
+                            match optr.compute_unary(context, op) {
+                                Ok(operand) => {
+                                    operands.push(operand);
+                                }
+                                Err(e) => return Err(e),
+                            }
+                        } else if num_operands == 2 {
+                            // Since we are iterating from back, left is the top most operand.
+                            let left = operands.pop().unwrap();
+                            let right = operands.pop().unwrap();
+
+                            match optr.compute_binary(context, left, right) {
+                                Ok(operand) => {
+                                    operands.push(operand);
+                                }
+                                Err(e) => return Err(e),
+                            }
+                        }
+                    }
+                },
+                Expr::Function(function) => {
+                    let function_to_run;
+
+                    match functions.get(&function.name) {
+                        Some(f) => function_to_run = f,
+                        None => {
+                            return Err(format!(
+                                "Function {:?} is not registered; Registered : {:?}",
+                                function.name, functions
+                            ))
+                        }
                     }
 
-                    if num_operands == 1 {
-                        let op = operands.pop().unwrap();
-                        match optr.compute_unary(context, op) {
-                            Ok(operand) => {
-                                operands.push(operand);
-                            }
-                            Err(e) => return Err(e),
-                        }
-                    } else if num_operands == 2 {
-                        // Since we are iterating from back, left is the top most operand.
-                        let left = operands.pop().unwrap();
-                        let right = operands.pop().unwrap();
-
-                        match optr.compute_binary(context, left, right) {
-                            Ok(operand) => {
-                                operands.push(operand);
-                            }
-                            Err(e) => return Err(e),
-                        }
+                    let params = &function.params;
+                    if params.len() != function_to_run.param_num() {
+                        return Err(format!("# of function params mistmatch! {} takes {} params but provided {} params", function.name, function_to_run.param_num(), params.len()));
                     }
+
+                    let mut evals = Vec::new();
+
+                    for param in params {
+                        evals.push(param.run(context, functions)?);
+                    }
+
+                    let return_value = match function_to_run {
+                        FunctionContainer::F0(f) => f(),
+                        FunctionContainer::F1(f) => {
+                            f(convert_operand_to_value(evals.pop().unwrap()))
+                        }
+                        FunctionContainer::F2(f) => {
+                            let p2 = evals.pop().unwrap();
+                            let p1 = evals.pop().unwrap();
+
+                            f(convert_operand_to_value(p1), convert_operand_to_value(p2))
+                        }
+                        FunctionContainer::F3(f) => {
+                            let p3 = evals.pop().unwrap();
+                            let p2 = evals.pop().unwrap();
+                            let p1 = evals.pop().unwrap();
+
+                            f(
+                                convert_operand_to_value(p1),
+                                convert_operand_to_value(p2),
+                                convert_operand_to_value(p3),
+                            )
+                        }
+                        FunctionContainer::F4(f) => {
+                            let p4 = evals.pop().unwrap();
+                            let p3 = evals.pop().unwrap();
+                            let p2 = evals.pop().unwrap();
+                            let p1 = evals.pop().unwrap();
+
+                            f(
+                                convert_operand_to_value(p1),
+                                convert_operand_to_value(p2),
+                                convert_operand_to_value(p3),
+                                convert_operand_to_value(p4),
+                            )
+                        }
+                    };
+
+                    operands.push(convert_value_to_operand(&return_value));
                 }
             }
         }
@@ -160,7 +270,7 @@ impl<'a> ComputeExpr<'a> for Eval {
     }
 
     // Returns true if the for loop's condition is true.
-    fn run_for_loop(&self, context: &'a mut Context, for_index: usize) -> Result<bool, String> {
+    fn run_for_loop(&self, context: &mut Context, for_index: usize) -> Result<bool, String> {
         if self.expr.len() != 3 {
             return Err(format!(
                 "For loop must use 'for a in b' format, yours use {:?}",
@@ -170,7 +280,7 @@ impl<'a> ComputeExpr<'a> for Eval {
 
         let object_name;
         match self.expr.get(0).unwrap() {
-            Op::Operand(Operand::Object(object)) => {
+            Expr::Op(Op::Operand(Operand::Object(object))) => {
                 object_name = &object.name;
             }
             _ => {
@@ -181,7 +291,7 @@ impl<'a> ComputeExpr<'a> for Eval {
             }
         }
 
-        if self.expr.get(1).unwrap() != &Op::Operand(Operand::Keyword(Keyword::In)) {
+        if self.expr.get(1).unwrap() != &Expr::Op(Op::Operand(Operand::Keyword(Keyword::In))) {
             return Err(format!(
                 "'in' is missing in your for-loop. Yours : {:?}",
                 self.expr
@@ -190,7 +300,7 @@ impl<'a> ComputeExpr<'a> for Eval {
 
         let container_name;
         match self.expr.get(2).unwrap() {
-            Op::Operand(Operand::Object(object)) => {
+            Expr::Op(Op::Operand(Operand::Object(object))) => {
                 container_name = &object.name;
             }
             _ => {
@@ -606,19 +716,19 @@ fn compute_and_test() {
 
     {
         let eval = Eval::new(get_expr(r"<% a && b %>")).unwrap();
-        let result = eval.run(&mut context);
+        let result = eval.run(&mut context, &HashMap::new());
 
         assert_eq!(result.unwrap(), Operand::Number(0));
     }
     {
         let eval = Eval::new(get_expr(r"<% c && d %>")).unwrap();
-        let result = eval.run(&mut context);
+        let result = eval.run(&mut context, &HashMap::new());
 
         assert_eq!(result.unwrap(), Operand::Number(0));
     }
     {
         let eval = Eval::new(get_expr(r"<% c && e %>")).unwrap();
-        let result = eval.run(&mut context);
+        let result = eval.run(&mut context, &HashMap::new());
 
         assert_eq!(result.unwrap(), Operand::Number(1));
     }
@@ -632,19 +742,19 @@ fn compute_or_test() {
 
     {
         let eval = Eval::new(get_expr(r"<% (a && b) || (c && e) %>")).unwrap();
-        let result = eval.run(&mut context);
+        let result = eval.run(&mut context, &HashMap::new());
 
         assert_eq!(result.unwrap(), Operand::Number(1));
     }
     {
         let eval = Eval::new(get_expr(r"<% (a && b) || (c && d) %>")).unwrap();
-        let result = eval.run(&mut context);
+        let result = eval.run(&mut context, &HashMap::new());
 
         assert_eq!(result.unwrap(), Operand::Number(0));
     }
     {
         let eval = Eval::new(get_expr(r"<% c || e %>")).unwrap();
-        let result = eval.run(&mut context);
+        let result = eval.run(&mut context, &HashMap::new());
 
         assert_eq!(result.unwrap(), Operand::Number(1));
     }
@@ -658,13 +768,13 @@ fn compute_complex() {
 
     {
         let eval = Eval::new(get_expr(r"<% !a && ((b != a) || c <= e) %>")).unwrap();
-        let result = eval.run(&mut context);
+        let result = eval.run(&mut context, &HashMap::new());
 
         assert_eq!(result.unwrap(), Operand::Number(0));
     }
     {
         let eval = Eval::new(get_expr(r"<% !b && ((b != a) || c <= e && !d) %>")).unwrap();
-        let result = eval.run(&mut context);
+        let result = eval.run(&mut context, &HashMap::new());
 
         assert_eq!(result.unwrap(), Operand::Number(1));
     }
@@ -673,7 +783,7 @@ fn compute_complex() {
             r#"<% (a == 1) && (b == 0) && (c == "abc") && !d && e == "def" %>"#,
         ))
         .unwrap();
-        let result = eval.run(&mut context);
+        let result = eval.run(&mut context, &HashMap::new());
 
         assert_eq!(result.unwrap(), Operand::Number(1));
     }
@@ -687,19 +797,19 @@ fn compute_complex_object_name() {
 
     {
         let eval = Eval::new(get_expr(r"<% a.b %>")).unwrap();
-        let result = eval.run(&mut context);
+        let result = eval.run(&mut context, &HashMap::new());
 
         assert_eq!(result.unwrap(), Operand::Number(2));
     }
     {
         let eval = Eval::new(get_expr(r"<% a.c.d %>")).unwrap();
-        let result = eval.run(&mut context);
+        let result = eval.run(&mut context, &HashMap::new());
 
         assert_eq!(result.unwrap(), Operand::Number(3));
     }
     {
         let eval = Eval::new(get_expr(r#"<% b %>"#)).unwrap();
-        let result = eval.run(&mut context);
+        let result = eval.run(&mut context, &HashMap::new());
 
         assert_eq!(result.unwrap(), Operand::Number(1));
     }
@@ -713,7 +823,7 @@ fn compute_assign_test() {
         let mut context = Context::new(context_value);
 
         let eval = Eval::new(get_expr(r"<% a = a && b %>")).unwrap();
-        let result = eval.run(&mut context);
+        let result = eval.run(&mut context, &HashMap::new());
 
         assert_eq!(result.unwrap(), Operand::Number(0));
         assert_eq!(context.context.get("a").unwrap().as_i64().unwrap(), 0);
@@ -723,7 +833,7 @@ fn compute_assign_test() {
         let mut context = Context::new(context_value);
 
         let eval = Eval::new(get_expr(r"<% a = a && c %>")).unwrap();
-        let result = eval.run(&mut context);
+        let result = eval.run(&mut context, &HashMap::new());
 
         assert_eq!(result.unwrap(), Operand::Number(1));
         assert_eq!(context.context.get("a").unwrap().as_i64().unwrap(), 1);
@@ -733,7 +843,7 @@ fn compute_assign_test() {
         let mut context = Context::new(context_value);
 
         let eval = Eval::new(get_expr(r"<% d = a && c %>")).unwrap();
-        let result = eval.run(&mut context);
+        let result = eval.run(&mut context, &HashMap::new());
 
         assert_eq!(result.unwrap(), Operand::Number(1));
         assert_eq!(context.context.get("d").unwrap().as_i64().unwrap(), 1);
@@ -749,7 +859,7 @@ fn compute_arithmetic() {
 
         // (1 + 2 * 3 - 6 / 2) * 2
         let eval = Eval::new(get_expr(r"<% b = a = (a + b * c - e / d) * f %>")).unwrap();
-        let result = eval.run(&mut context);
+        let result = eval.run(&mut context, &HashMap::new());
 
         assert_eq!(result.unwrap(), Operand::Number(8));
         assert_eq!(context.context.get("a").unwrap().as_i64().unwrap(), 8);

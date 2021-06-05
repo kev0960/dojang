@@ -11,6 +11,7 @@ use std::path::PathBuf;
 pub struct Dojang {
     /// Mapping between the template file name and the renderer along with the file content.
     templates: HashMap<String, (Executer, String)>,
+    functions: HashMap<String, FunctionContainer>,
 }
 
 impl Dojang {
@@ -18,6 +19,7 @@ impl Dojang {
     pub fn new() -> Self {
         Dojang {
             templates: HashMap::new(),
+            functions: HashMap::new(),
         }
     }
 
@@ -48,6 +50,45 @@ impl Dojang {
             (Executer::new(Parser::parse(&template)?)?, template),
         );
 
+        Ok(self)
+    }
+
+    /// Adds a function that can be used in the template.
+    ///
+    /// If there is already an existing function with same name, this will return error.
+    ///
+    /// # Arguments
+    ///
+    /// * `function_name` - Name of the function.
+    /// * `function` - The body of the function. Function must be taking `serde_json::Value` as a
+    /// parameters and return `serde_json::Value`. Also, the function must be one of enum values
+    /// defined in `FunctionContainer`, which are categorized by the number of parameters.
+    ///
+    /// For example, if the function takes 2 params, it must be `FunctionContainer::F2`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use serde_json::Value;
+    /// let mut dojang = dojang::Dojang::new();
+    ///
+    /// // Register a function that takes two numeric values and returns the sum of it.
+    /// dojang.add_function("func".to_string(), dojang::FunctionContainer::F2(|a: Value, b: Value| -> Value {
+    ///        Value::Number(serde_json::Number::from(
+    ///            a.as_i64().unwrap() + b.as_i64().unwrap(),
+    ///        ))
+    ///    }));
+    /// ```
+    pub fn add_function(
+        &mut self,
+        function_name: String,
+        function: FunctionContainer,
+    ) -> Result<&Self, String> {
+        if self.functions.contains_key(&function_name) {
+            return Err(format!("{} is already added as a function", function_name));
+        }
+
+        self.functions.insert(function_name, function);
         Ok(self)
     }
 
@@ -127,7 +168,7 @@ impl Dojang {
     /// ```
     pub fn render(&self, file_name: &str, value: Value) -> Result<String, String> {
         if let Some((executer, file_content)) = self.templates.get(&file_name.to_string()) {
-            executer.render(&mut Context::new(value), file_content)
+            executer.render(&mut Context::new(value), &self.functions, file_content)
         } else {
             Err(format!("Template {} is not found", file_name))
         }

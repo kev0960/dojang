@@ -10,6 +10,7 @@
 
 * Supports basic javascript. (if, for, while, etc.)
 * Supports script and output tags. (<%, <%-, <%=)
+* Supports calling external functions.
 
 ## How to use?
 
@@ -23,7 +24,8 @@ let mut dojang = Dojang::new();
 // Load template file under '/my/template/files'
 assert!(dojang.load("/my/template/files").is_ok());
 
-// Render a template. "some_template" is the one of the template file under /my/template/files. // Note that the context should be provided as a serde_json value.
+// Render a template. "some_template" is the one of the template file under /my/template/files. 
+// Note that the context should be provided as a serde_json value.
 assert_eq!(
     dojang
         .render(
@@ -48,5 +50,4 @@ assert_eq!(
 ## Features coming soon.
 
 * Support for file includes (<%- .. >)
-* Function calling.
 * Optimization.
