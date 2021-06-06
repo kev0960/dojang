@@ -603,11 +603,11 @@ fn test_function() {
     let mut functions = HashMap::new();
     functions.insert(
         "func".to_string(),
-        FunctionContainer::F2(|a: Value, b: Value| -> Value {
+        FunctionContainer::F2(Box::new(|a: Value, b: Value| -> Value {
             Value::Number(serde_json::Number::from(
                 a.as_i64().unwrap() + b.as_i64().unwrap(),
             ))
-        }),
+        })),
     );
 
     let result = executer.render(&mut context, &functions, template).unwrap();
@@ -627,20 +627,20 @@ fn test_function_complex() {
     let mut functions = HashMap::new();
     functions.insert(
         "func".to_string(),
-        FunctionContainer::F2(|a: Value, b: Value| -> Value {
+        FunctionContainer::F2(Box::new(|a: Value, b: Value| -> Value {
             Value::Number(serde_json::Number::from(
                 a.as_i64().unwrap() + b.as_i64().unwrap(),
             ))
-        }),
+        })),
     );
 
     functions.insert(
         "func2".to_string(),
-        FunctionContainer::F3(|a: Value, b: Value, c: Value| -> Value {
+        FunctionContainer::F3(Box::new(|a: Value, b: Value, c: Value| -> Value {
             Value::Number(serde_json::Number::from(
                 a.as_i64().unwrap() * b.as_i64().unwrap() - c.as_i64().unwrap(),
             ))
-        }),
+        })),
     );
 
     let result = executer.render(&mut context, &functions, template).unwrap();
@@ -660,11 +660,11 @@ fn test_function_with_statements() {
     let mut functions = HashMap::new();
     functions.insert(
         "func".to_string(),
-        FunctionContainer::F2(|a: Value, b: Value| -> Value {
+        FunctionContainer::F2(Box::new(|a: Value, b: Value| -> Value {
             Value::Number(serde_json::Number::from(
                 a.as_i64().unwrap() + b.as_i64().unwrap(),
             ))
-        }),
+        })),
     );
 
     let result = executer.render(&mut context, &functions, template).unwrap();

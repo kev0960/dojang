@@ -8,13 +8,13 @@ use std::io;
 use std::path::PathBuf;
 
 /// HTML template rendering engine that should be constructed for once.
-pub struct Dojang {
+pub struct Dojang<'a> {
     /// Mapping between the template file name and the renderer along with the file content.
     templates: HashMap<String, (Executer, String)>,
-    functions: HashMap<String, FunctionContainer>,
+    functions: HashMap<String, FunctionContainer<'a>>,
 }
 
-impl Dojang {
+impl<'a> Dojang<'a> {
     /// Creates a template engine.
     pub fn new() -> Self {
         Dojang {
@@ -73,7 +73,7 @@ impl Dojang {
     /// let mut dojang = dojang::Dojang::new();
     ///
     /// // Register a function that takes two numeric values and returns the sum of it.
-    /// dojang.add_function("func".to_string(), dojang::FunctionContainer::F2(|a: Value, b: Value| -> Value {
+    /// dojang.add_function("func".to_string(), to_function_container2(|a: Value, b: Value| -> Value {
     ///        Value::Number(serde_json::Number::from(
     ///            a.as_i64().unwrap() + b.as_i64().unwrap(),
     ///        ))
@@ -82,7 +82,7 @@ impl Dojang {
     pub fn add_function(
         &mut self,
         function_name: String,
-        function: FunctionContainer,
+        function: FunctionContainer<'a>,
     ) -> Result<&Self, String> {
         if self.functions.contains_key(&function_name) {
             return Err(format!("{} is already added as a function", function_name));
@@ -182,6 +182,20 @@ fn get_all_file_path_under_dir(dir_name: &str) -> io::Result<Vec<PathBuf>> {
         .collect()
 }
 
+fn to_function_container<'a, T: From<Value>, V: Into<Value>>(
+    func: &'a dyn Fn(T) -> V,
+) -> FunctionContainer {
+    FunctionContainer::F1(Box::new(move |v: Value| -> Value { func(v.into()).into() }))
+}
+
+fn to_function_container2<'a, T1: From<Value>, T2: From<Value>, V: Into<Value>>(
+    func: &'a dyn Fn(T1, T2) -> V,
+) -> FunctionContainer {
+    FunctionContainer::F2(Box::new(move |v1: Value, v2: Value| -> Value {
+        func(v1.into(), v2.into()).into()
+    }))
+}
+
 #[test]
 fn render() {
     let template = "<% if a == 1 { %> Hi <% } else { %><%= a %><% } %>".to_string();
@@ -238,5 +252,38 @@ fn render_from_dir() {
   </body>
 </html>
 "#
+    );
+}
+
+#[cfg(test)]
+fn func(a: u64, b: u64) -> u64 {
+    a + b
+}
+
+#[test]
+fn render_function() {
+    let template = r#"func(a,b) = <%= func(a, b) %>"#.to_string();
+    let mut dojang = Dojang::new();
+    assert!(dojang.add("some_template".to_string(), template).is_ok());
+    dojang.add_function("func", to_function_container2(&func));
+
+    assert_eq!(
+        dojang
+            .render(
+                "some_template",
+                serde_json::from_str(r#"{ "a" : 1 }"#).unwrap()
+            )
+            .unwrap(),
+        " Hi "
+    );
+
+    assert_eq!(
+        dojang
+            .render(
+                "some_template",
+                serde_json::from_str(r#"{ "a" : 2 }"#).unwrap()
+            )
+            .unwrap(),
+        "2"
     );
 }

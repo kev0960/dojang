@@ -9,15 +9,15 @@ pub struct Context {
     pub context: Value,
 }
 
-pub enum FunctionContainer {
-    F0(fn() -> Value),
-    F1(fn(Value) -> Value),
-    F2(fn(Value, Value) -> Value),
-    F3(fn(Value, Value, Value) -> Value),
-    F4(fn(Value, Value, Value, Value) -> Value),
+pub enum FunctionContainer<'a> {
+    F0(Box<dyn Fn() -> Value>),
+    F1(Box<dyn Fn(Value) -> Value + 'a>),
+    F2(Box<dyn Fn(Value, Value) -> Value + 'a>),
+    F3(Box<dyn Fn(Value, Value, Value) -> Value + 'a>),
+    F4(Box<dyn Fn(Value, Value, Value, Value) -> Value + 'a>),
 }
 
-impl fmt::Debug for FunctionContainer {
+impl<'a> fmt::Debug for FunctionContainer<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut f = f.debug_struct("FunctionContainer");
         match self {
@@ -32,7 +32,7 @@ impl fmt::Debug for FunctionContainer {
     }
 }
 
-impl FunctionContainer {
+impl<'a> FunctionContainer<'a> {
     pub fn param_num(&self) -> usize {
         match self {
             FunctionContainer::F0(_) => 0,
