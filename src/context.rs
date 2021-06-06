@@ -10,11 +10,11 @@ pub struct Context {
 }
 
 pub enum FunctionContainer<'a> {
-    F0(Box<dyn Fn() -> Value>),
-    F1(Box<dyn Fn(Value) -> Value + 'a>),
-    F2(Box<dyn Fn(Value, Value) -> Value + 'a>),
-    F3(Box<dyn Fn(Value, Value, Value) -> Value + 'a>),
-    F4(Box<dyn Fn(Value, Value, Value, Value) -> Value + 'a>),
+    F0(Box<dyn Fn() -> Operand>),
+    F1(Box<dyn Fn(Operand) -> Operand + 'a>),
+    F2(Box<dyn Fn(Operand, Operand) -> Operand + 'a>),
+    F3(Box<dyn Fn(Operand, Operand, Operand) -> Operand + 'a>),
+    F4(Box<dyn Fn(Operand, Operand, Operand, Operand) -> Operand + 'a>),
 }
 
 impl<'a> fmt::Debug for FunctionContainer<'a> {
@@ -77,10 +77,13 @@ impl Context {
         Ok(value)
     }
 
-    fn get_nth_from_array(&self, name: &str, index: usize) -> Result<Option<&Value>, String> {
+    fn get_nth_from_array(&self, name: &str, index: usize) -> Result<Option<Value>, String> {
         let value = self.get_value(name)?;
         match value {
-            Value::Array(arr) => Ok(arr.get(index)),
+            Value::Array(arr) => match arr.get(index) {
+                Some(elem) => Ok(Some(elem.clone())),
+                None => Ok(None),
+            },
             _ => {
                 return Err(format!(
                     "in only works on the array; You gave : {:?}",
@@ -90,7 +93,7 @@ impl Context {
         }
     }
 
-    fn set_value(&mut self, name: &str, operand: Operand) -> Result<(), String> {
+    fn set_value(&mut self, name: &str, provided: &Value) -> Result<(), String> {
         let names = name.split(".").collect::<Vec<&str>>();
         if names.is_empty() {
             return Err(format!("Mapping not exist : {}", name));
@@ -113,10 +116,10 @@ impl Context {
                     self.context = Value::Object(Map::new());
                 }
 
-                self.context.as_object_mut().unwrap().insert(
-                    names.get(0).unwrap().to_string(),
-                    convert_operand_to_value(operand),
-                );
+                self.context
+                    .as_object_mut()
+                    .unwrap()
+                    .insert(names.get(0).unwrap().to_string(), provided.clone());
 
                 return Ok(());
             }
@@ -131,7 +134,7 @@ impl Context {
             }
         }
 
-        *value = convert_operand_to_value(operand);
+        *value = provided.clone();
         Ok(())
     }
 }
@@ -216,25 +219,19 @@ impl ComputeExpr for Eval {
 
                     let return_value = match function_to_run {
                         FunctionContainer::F0(f) => f(),
-                        FunctionContainer::F1(f) => {
-                            f(convert_operand_to_value(evals.pop().unwrap()))
-                        }
+                        FunctionContainer::F1(f) => f(evals.pop().unwrap()),
                         FunctionContainer::F2(f) => {
                             let p2 = evals.pop().unwrap();
                             let p1 = evals.pop().unwrap();
 
-                            f(convert_operand_to_value(p1), convert_operand_to_value(p2))
+                            f(p1, p2)
                         }
                         FunctionContainer::F3(f) => {
                             let p3 = evals.pop().unwrap();
                             let p2 = evals.pop().unwrap();
                             let p1 = evals.pop().unwrap();
 
-                            f(
-                                convert_operand_to_value(p1),
-                                convert_operand_to_value(p2),
-                                convert_operand_to_value(p3),
-                            )
+                            f(p1, p2, p3)
                         }
                         FunctionContainer::F4(f) => {
                             let p4 = evals.pop().unwrap();
@@ -242,16 +239,11 @@ impl ComputeExpr for Eval {
                             let p2 = evals.pop().unwrap();
                             let p1 = evals.pop().unwrap();
 
-                            f(
-                                convert_operand_to_value(p1),
-                                convert_operand_to_value(p2),
-                                convert_operand_to_value(p3),
-                                convert_operand_to_value(p4),
-                            )
+                            f(p1, p2, p3, p4)
                         }
                     };
 
-                    operands.push(convert_value_to_operand(&return_value));
+                    operands.push(return_value);
                 }
             }
         }
@@ -264,7 +256,9 @@ impl ComputeExpr for Eval {
         }
 
         match operands.pop().unwrap() {
-            Operand::Object(obj) => Ok(convert_value_to_operand(context.get_value(&obj.name)?)),
+            Operand::Object(obj) => Ok(convert_value_to_operand(
+                context.get_value(&obj.name)?.clone(),
+            )),
             operand => Ok(operand),
         }
     }
@@ -313,8 +307,7 @@ impl ComputeExpr for Eval {
 
         match context.get_nth_from_array(&container_name, for_index)? {
             Some(element) => {
-                let operand = convert_value_to_operand(element);
-                context.set_value(object_name, operand)?;
+                context.set_value(object_name, &element)?;
                 Ok(true)
             }
             _ => Ok(false),
@@ -330,9 +323,18 @@ pub trait Convert {
 impl Convert for Operand {
     fn is_true(&self) -> bool {
         match &self {
-            Operand::Literal(l) => !l.is_empty(),
-            Operand::Number(n) => *n != 0,
-            Operand::Decimal(d) => *d != 0.,
+            Operand::Value(v) => match v {
+                Value::Number(n) => {
+                    if n.is_i64() {
+                        return n.as_i64().unwrap() != 0;
+                    } else if n.is_f64() {
+                        return n.as_f64().unwrap() != 0.;
+                    }
+                    panic!("Unknown number type for is_true");
+                }
+                Value::String(s) => !s.is_empty(),
+                _ => panic!("Unknown type."),
+            },
             Operand::Array(arr) => !arr.is_empty(),
             _ => {
                 panic!("Unconvertible object {:?}", &self)
@@ -342,9 +344,10 @@ impl Convert for Operand {
 
     fn to_str(&self) -> String {
         match &self {
-            Operand::Literal(l) => l.to_string(),
-            Operand::Number(n) => n.to_string(),
-            Operand::Decimal(d) => d.to_string(),
+            Operand::Value(v) => match v {
+                Value::String(s) => s.clone(),
+                v => v.to_string(),
+            },
             Operand::Array(arr) => format!("{:?}", arr),
             _ => {
                 panic!("Unconvertible object {:?}", &self)
@@ -401,36 +404,23 @@ impl ComputeOp for Op {
     }
 }
 
-fn convert_value_to_operand(value: &Value) -> Operand {
+fn convert_value_to_operand(value: Value) -> Operand {
     match value {
-        Value::Bool(b) => Operand::Number(*b as i64),
-        Value::Number(n) => {
-            if n.is_i64() {
-                Operand::Number(n.as_i64().unwrap())
-            } else {
-                Operand::Decimal(n.as_f64().unwrap())
-            }
-        }
-        Value::String(s) => Operand::Literal(s.clone()),
+        Value::Object(_) => panic!("Should not use Object in Value"),
         Value::Array(arr) => {
             let mut vec = Vec::new();
             for elem in arr {
-                vec.push(convert_value_to_operand(&elem))
+                vec.push(Operand::Value(elem));
             }
-
             Operand::Array(vec)
         }
-        _ => {
-            panic!("This should not happen")
-        }
+        v => Operand::Value(v),
     }
 }
 
 fn convert_operand_to_value(operand: Operand) -> Value {
     match operand {
-        Operand::Number(n) => Value::from(n),
-        Operand::Decimal(d) => Value::from(d),
-        Operand::Literal(l) => Value::from(l),
+        Operand::Value(v) => v,
         Operand::Array(arr) => {
             let mut vec = Vec::new();
             for elem in arr {
@@ -450,20 +440,29 @@ fn compute_unary<'a, ComputeFunc>(
     compute_func: ComputeFunc,
 ) -> Result<Operand, String>
 where
-    ComputeFunc: Fn(Operand) -> Result<Operand, String>,
+    ComputeFunc: Fn(&Value) -> Result<Value, String>,
 {
-    if let Operand::Object(obj) = op {
+    Ok(convert_value_to_operand(compute_func(
+        get_value_from_operand(context, &op)?,
+    )?))
+}
+
+fn get_value_from_operand<'a>(
+    context: &'a Context,
+    operand: &'a Operand,
+) -> Result<&'a Value, String> {
+    if let Operand::Object(obj) = operand {
         match context.get_value(&obj.name) {
-            Ok(v) => {
-                return compute_unary(context, convert_value_to_operand(v), compute_func);
-            }
+            Ok(v) => Ok(v),
             Err(e) => {
                 return Err(e);
             }
         }
+    } else if let Operand::Value(v) = operand {
+        Ok(&v)
+    } else {
+        return Err(format!("Unable to extract value from {:?}", operand));
     }
-
-    compute_func(op)
 }
 
 fn compute_binary<ComputeFunc>(
@@ -473,31 +472,15 @@ fn compute_binary<ComputeFunc>(
     compute_func: ComputeFunc,
 ) -> Result<Operand, String>
 where
-    ComputeFunc: Fn(Operand, Operand) -> Result<Operand, String>,
+    ComputeFunc: Fn(&Value, &Value) -> Result<Value, String>,
 {
-    if let Operand::Object(l) = left {
-        match context.get_value(&l.name) {
-            Ok(v) => {
-                return compute_binary(context, convert_value_to_operand(v), right, compute_func);
-            }
-            Err(e) => {
-                return Err(e);
-            }
-        }
-    }
+    let left_value = get_value_from_operand(context, &left)?;
+    let right_value = get_value_from_operand(context, &right)?;
 
-    if let Operand::Object(r) = right {
-        match context.get_value(&r.name) {
-            Ok(v) => {
-                return compute_func(left, convert_value_to_operand(v));
-            }
-            Err(e) => {
-                return Err(e);
-            }
-        }
-    }
-
-    compute_func(left, right)
+    Ok(convert_value_to_operand(compute_func(
+        left_value,
+        right_value,
+    )?))
 }
 
 fn compute_simple_assign(
@@ -508,13 +491,11 @@ fn compute_simple_assign(
     if let Operand::Object(ref object) = left {
         match right {
             Operand::Object(right_obj) => {
-                context.set_value(
-                    &object.name,
-                    convert_value_to_operand(context.get_value(&right_obj.name)?),
-                )?;
+                let val = context.get_value(&right_obj.name)?.clone();
+                context.set_value(&object.name, &val)?;
             }
             _ => {
-                context.set_value(&object.name, right)?;
+                context.set_value(&object.name, &convert_operand_to_value(right))?;
             }
         }
         Ok(left)
@@ -561,142 +542,259 @@ where
 }
 */
 
-fn compute_and(left: Operand, right: Operand) -> Result<Operand, String> {
+fn compute_and(left: &Value, right: &Value) -> Result<Value, String> {
     match (&left, &right) {
-        (Operand::Literal(l), Operand::Literal(r)) => {
-            Ok(Operand::Number(((l.len() != 0) && (r.len() != 0)) as i64))
+        (Value::String(l), Value::String(r)) => {
+            return Ok(Value::from(((l.len() != 0) && (r.len() != 0)) as i64));
         }
-        (Operand::Number(l), Operand::Number(r)) => {
-            Ok(Operand::Number(((l != &0) && (r != &0)) as i64))
+        (Value::Number(l), Value::Number(r)) => {
+            if l.is_i64() && r.is_i64() {
+                return Ok(Value::from(
+                    ((l.as_i64().unwrap() != 0) && (r.as_i64().unwrap() != 0)) as i64,
+                ));
+            } else if l.is_f64() && r.is_f64() {
+                return Ok(Value::from(
+                    ((l.as_f64().unwrap() != 0.) && (r.as_f64().unwrap() != 0.)) as i64,
+                ));
+            }
         }
-        (Operand::Decimal(l), Operand::Decimal(r)) => {
-            Ok(Operand::Number(((l != &0.) && (r != &0.)) as i64))
-        }
-        _ => Err(format!("Invalid operation between {:?} {:?}", left, right)),
-    }
+        _ => {}
+    };
+
+    Err(format!("Invalid operation between {:?} {:?}", left, right))
 }
 
-fn compute_or(left: Operand, right: Operand) -> Result<Operand, String> {
+fn compute_or(left: &Value, right: &Value) -> Result<Value, String> {
     match (&left, &right) {
-        (Operand::Literal(l), Operand::Literal(r)) => {
-            Ok(Operand::Number(((l.len() != 0) || (r.len() != 0)) as i64))
+        (Value::String(l), Value::String(r)) => {
+            return Ok(Value::from(((l.len() != 0) || (r.len() != 0)) as i64));
         }
-        (Operand::Number(l), Operand::Number(r)) => {
-            Ok(Operand::Number(((l != &0) || (r != &0)) as i64))
+        (Value::Number(l), Value::Number(r)) => {
+            if l.is_i64() && r.is_i64() {
+                return Ok(Value::from(
+                    ((l.as_i64().unwrap() != 0) || (r.as_i64().unwrap() != 0)) as i64,
+                ));
+            } else if l.is_f64() && r.is_f64() {
+                return Ok(Value::from(
+                    ((l.as_f64().unwrap() != 0.) || (r.as_f64().unwrap() != 0.)) as i64,
+                ));
+            }
         }
-        (Operand::Decimal(l), Operand::Decimal(r)) => {
-            Ok(Operand::Number(((l != &0.) || (r != &0.)) as i64))
-        }
-        _ => Err(format!("Invalid operation between {:?} {:?}", left, right)),
-    }
+        _ => {}
+    };
+
+    Err(format!("Invalid operation between {:?} {:?}", left, right))
 }
 
-fn compute_greater(left: Operand, right: Operand) -> Result<Operand, String> {
+fn compute_greater(left: &Value, right: &Value) -> Result<Value, String> {
     match (&left, &right) {
-        (Operand::Literal(l), Operand::Literal(r)) => Ok(Operand::Number((l > r) as i64)),
-        (Operand::Number(l), Operand::Number(r)) => Ok(Operand::Number((l > r) as i64)),
-        (Operand::Decimal(l), Operand::Decimal(r)) => Ok(Operand::Number((l > r) as i64)),
-        _ => Err(format!("Invalid operation between {:?} {:?}", left, right)),
-    }
-}
-
-fn compute_greater_eq(left: Operand, right: Operand) -> Result<Operand, String> {
-    match (&left, &right) {
-        (Operand::Literal(l), Operand::Literal(r)) => Ok(Operand::Number((l >= r) as i64)),
-        (Operand::Number(l), Operand::Number(r)) => Ok(Operand::Number((l >= r) as i64)),
-        (Operand::Decimal(l), Operand::Decimal(r)) => Ok(Operand::Number((l >= r) as i64)),
-        _ => Err(format!("Invalid operation between {:?} {:?}", left, right)),
-    }
-}
-
-fn compute_less(left: Operand, right: Operand) -> Result<Operand, String> {
-    match (&left, &right) {
-        (Operand::Literal(l), Operand::Literal(r)) => Ok(Operand::Number((l < r) as i64)),
-        (Operand::Number(l), Operand::Number(r)) => Ok(Operand::Number((l < r) as i64)),
-        (Operand::Decimal(l), Operand::Decimal(r)) => Ok(Operand::Number((l < r) as i64)),
-        _ => Err(format!("Invalid operation between {:?} {:?}", left, right)),
-    }
-}
-
-fn compute_less_eq(left: Operand, right: Operand) -> Result<Operand, String> {
-    match (&left, &right) {
-        (Operand::Literal(l), Operand::Literal(r)) => Ok(Operand::Number((l <= r) as i64)),
-        (Operand::Number(l), Operand::Number(r)) => Ok(Operand::Number((l <= r) as i64)),
-        (Operand::Decimal(l), Operand::Decimal(r)) => Ok(Operand::Number((l <= r) as i64)),
-        _ => Err(format!("Invalid operation between {:?} {:?}", left, right)),
-    }
-}
-
-fn compute_eq(left: Operand, right: Operand) -> Result<Operand, String> {
-    match (&left, &right) {
-        (Operand::Literal(l), Operand::Literal(r)) => Ok(Operand::Number((l == r) as i64)),
-        (Operand::Number(l), Operand::Number(r)) => Ok(Operand::Number((l == r) as i64)),
-        (Operand::Decimal(l), Operand::Decimal(r)) => Ok(Operand::Number((l == r) as i64)),
-        _ => Err(format!("Invalid operation between {:?} {:?}", left, right)),
-    }
-}
-
-fn compute_neq(left: Operand, right: Operand) -> Result<Operand, String> {
-    match (&left, &right) {
-        (Operand::Literal(l), Operand::Literal(r)) => Ok(Operand::Number((l != r) as i64)),
-        (Operand::Number(l), Operand::Number(r)) => Ok(Operand::Number((l != r) as i64)),
-        (Operand::Decimal(l), Operand::Decimal(r)) => Ok(Operand::Number((l != r) as i64)),
-        _ => Err(format!("Invalid operation between {:?} {:?}", left, right)),
-    }
-}
-
-fn compute_add(left: Operand, right: Operand) -> Result<Operand, String> {
-    match (left, right) {
-        (Operand::Literal(mut l), Operand::Literal(r)) => {
-            l.push_str(&r);
-            Ok(Operand::Literal(l))
+        (Value::String(l), Value::String(r)) => {
+            return Ok(Value::from((l > r) as i64));
         }
-        (Operand::Number(l), Operand::Number(r)) => Ok(Operand::Number(l + r)),
-        (Operand::Decimal(l), Operand::Decimal(r)) => Ok(Operand::Decimal(l + r)),
-        (left, right) => Err(format!("Invalid operation between {:?} {:?}", left, right)),
-    }
-}
-
-fn compute_minus(left: Operand, right: Operand) -> Result<Operand, String> {
-    match (left, right) {
-        (Operand::Literal(l), Operand::Literal(r)) => {
-            Err(format!("Cannot use '-' between strings {:?} {:?}", l, r))
+        (Value::Number(l), Value::Number(r)) => {
+            if l.is_i64() && r.is_i64() {
+                return Ok(Value::from(
+                    (l.as_i64().unwrap() > r.as_i64().unwrap()) as i64,
+                ));
+            } else if l.is_f64() && r.is_f64() {
+                return Ok(Value::from(
+                    (l.as_f64().unwrap() > r.as_f64().unwrap()) as i64,
+                ));
+            }
         }
-        (Operand::Number(l), Operand::Number(r)) => Ok(Operand::Number(l - r)),
-        (Operand::Decimal(l), Operand::Decimal(r)) => Ok(Operand::Decimal(l - r)),
-        (left, right) => Err(format!("Invalid operation between {:?} {:?}", left, right)),
-    }
+        _ => {}
+    };
+
+    Err(format!("Invalid operation between {:?} {:?}", left, right))
 }
 
-fn compute_multiply(left: Operand, right: Operand) -> Result<Operand, String> {
-    match (left, right) {
-        (Operand::Literal(l), Operand::Literal(r)) => {
-            Err(format!("Cannot use '*' between strings {:?} {:?}", l, r))
+fn compute_greater_eq(left: &Value, right: &Value) -> Result<Value, String> {
+    match (&left, &right) {
+        (Value::String(l), Value::String(r)) => {
+            return Ok(Value::from((l >= r) as i64));
         }
-        (Operand::Number(l), Operand::Number(r)) => Ok(Operand::Number(l * r)),
-        (Operand::Decimal(l), Operand::Decimal(r)) => Ok(Operand::Decimal(l * r)),
-        (left, right) => Err(format!("Invalid operation between {:?} {:?}", left, right)),
-    }
-}
-
-fn compute_divide(left: Operand, right: Operand) -> Result<Operand, String> {
-    match (left, right) {
-        (Operand::Literal(l), Operand::Literal(r)) => {
-            Err(format!("Cannot use '/' between strings {:?} {:?}", l, r))
+        (Value::Number(l), Value::Number(r)) => {
+            if l.is_i64() && r.is_i64() {
+                return Ok(Value::from(
+                    (l.as_i64().unwrap() >= r.as_i64().unwrap()) as i64,
+                ));
+            } else if l.is_f64() && r.is_f64() {
+                return Ok(Value::from(
+                    (l.as_f64().unwrap() >= r.as_f64().unwrap()) as i64,
+                ));
+            }
         }
-        (Operand::Number(l), Operand::Number(r)) => Ok(Operand::Number(l / r)),
-        (Operand::Decimal(l), Operand::Decimal(r)) => Ok(Operand::Decimal(l / r)),
-        (left, right) => Err(format!("Invalid operation between {:?} {:?}", left, right)),
-    }
+        _ => {}
+    };
+
+    Err(format!("Invalid operation between {:?} {:?}", left, right))
 }
 
-fn compute_not(operand: Operand) -> Result<Operand, String> {
+fn compute_less(left: &Value, right: &Value) -> Result<Value, String> {
+    match (&left, &right) {
+        (Value::String(l), Value::String(r)) => {
+            return Ok(Value::from((l < r) as i64));
+        }
+        (Value::Number(l), Value::Number(r)) => {
+            if l.is_i64() && r.is_i64() {
+                return Ok(Value::from(
+                    (l.as_i64().unwrap() < r.as_i64().unwrap()) as i64,
+                ));
+            } else if l.is_f64() && r.is_f64() {
+                return Ok(Value::from(
+                    (l.as_f64().unwrap() < r.as_f64().unwrap()) as i64,
+                ));
+            }
+        }
+        _ => {}
+    };
+
+    Err(format!("Invalid operation between {:?} {:?}", left, right))
+}
+
+fn compute_less_eq(left: &Value, right: &Value) -> Result<Value, String> {
+    match (&left, &right) {
+        (Value::String(l), Value::String(r)) => {
+            return Ok(Value::from((l <= r) as i64));
+        }
+        (Value::Number(l), Value::Number(r)) => {
+            if l.is_i64() && r.is_i64() {
+                return Ok(Value::from(
+                    (l.as_i64().unwrap() <= r.as_i64().unwrap()) as i64,
+                ));
+            } else if l.is_f64() && r.is_f64() {
+                return Ok(Value::from(
+                    (l.as_f64().unwrap() <= r.as_f64().unwrap()) as i64,
+                ));
+            }
+        }
+        _ => {}
+    };
+
+    Err(format!("Invalid operation between {:?} {:?}", left, right))
+}
+
+fn compute_eq(left: &Value, right: &Value) -> Result<Value, String> {
+    match (&left, &right) {
+        (Value::String(l), Value::String(r)) => {
+            return Ok(Value::from((l == r) as i64));
+        }
+        (Value::Number(l), Value::Number(r)) => {
+            if l.is_i64() && r.is_i64() {
+                return Ok(Value::from(
+                    (l.as_i64().unwrap() == r.as_i64().unwrap()) as i64,
+                ));
+            } else if l.is_f64() && r.is_f64() {
+                return Ok(Value::from(
+                    (l.as_f64().unwrap() == r.as_f64().unwrap()) as i64,
+                ));
+            }
+        }
+        _ => {}
+    };
+
+    Err(format!("Invalid operation between {:?} {:?}", left, right))
+}
+
+fn compute_neq(left: &Value, right: &Value) -> Result<Value, String> {
+    match (&left, &right) {
+        (Value::String(l), Value::String(r)) => {
+            return Ok(Value::from((l != r) as i64));
+        }
+        (Value::Number(l), Value::Number(r)) => {
+            if l.is_i64() && r.is_i64() {
+                return Ok(Value::from(
+                    (l.as_i64().unwrap() != r.as_i64().unwrap()) as i64,
+                ));
+            } else if l.is_f64() && r.is_f64() {
+                return Ok(Value::from(
+                    (l.as_f64().unwrap() != r.as_f64().unwrap()) as i64,
+                ));
+            }
+        }
+        _ => {}
+    };
+
+    Err(format!("Invalid operation between {:?} {:?}", left, right))
+}
+
+fn compute_add(left: &Value, right: &Value) -> Result<Value, String> {
+    match (&left, &right) {
+        (Value::String(l), Value::String(r)) => {
+            return Ok(Value::from(l.clone().push_str(r)));
+        }
+        (Value::Number(l), Value::Number(r)) => {
+            if l.is_i64() && r.is_i64() {
+                return Ok(Value::from(l.as_i64().unwrap() + r.as_i64().unwrap()));
+            } else if l.is_f64() && r.is_f64() {
+                return Ok(Value::from(l.as_f64().unwrap() + r.as_f64().unwrap()));
+            }
+        }
+        _ => {}
+    };
+
+    Err(format!("Invalid operation between {:?} {:?}", left, right))
+}
+
+fn compute_minus(left: &Value, right: &Value) -> Result<Value, String> {
+    match (&left, &right) {
+        (Value::Number(l), Value::Number(r)) => {
+            if l.is_i64() && r.is_i64() {
+                return Ok(Value::from(l.as_i64().unwrap() - r.as_i64().unwrap()));
+            } else if l.is_f64() && r.is_f64() {
+                return Ok(Value::from(l.as_f64().unwrap() - r.as_f64().unwrap()));
+            }
+        }
+        _ => {}
+    };
+
+    Err(format!("Invalid operation between {:?} {:?}", left, right))
+}
+
+fn compute_multiply(left: &Value, right: &Value) -> Result<Value, String> {
+    match (&left, &right) {
+        (Value::Number(l), Value::Number(r)) => {
+            if l.is_i64() && r.is_i64() {
+                return Ok(Value::from(l.as_i64().unwrap() * r.as_i64().unwrap()));
+            } else if l.is_f64() && r.is_f64() {
+                return Ok(Value::from(l.as_f64().unwrap() * r.as_f64().unwrap()));
+            }
+        }
+        _ => {}
+    };
+
+    Err(format!("Invalid operation between {:?} {:?}", left, right))
+}
+
+fn compute_divide(left: &Value, right: &Value) -> Result<Value, String> {
+    match (&left, &right) {
+        (Value::Number(l), Value::Number(r)) => {
+            if l.is_i64() && r.is_i64() {
+                return Ok(Value::from(l.as_i64().unwrap() / r.as_i64().unwrap()));
+            } else if l.is_f64() && r.is_f64() {
+                return Ok(Value::from(l.as_f64().unwrap() / r.as_f64().unwrap()));
+            }
+        }
+        _ => {}
+    };
+
+    Err(format!("Invalid operation between {:?} {:?}", left, right))
+}
+
+fn compute_not(operand: &Value) -> Result<Value, String> {
     match &operand {
-        Operand::Literal(s) => Ok(Operand::Number((s.len() == 0) as i64)),
-        Operand::Number(n) => Ok(Operand::Number((n == &0) as i64)),
-        Operand::Decimal(d) => Ok(Operand::Number((d == &0.) as i64)),
-        _ => Err(format!("Invalid operation NOT {:?}", operand)),
+        Value::String(s) => return Ok(Value::from((s.len() == 0) as i64)),
+        Value::Number(n) => {
+            if n.is_i64() {
+                return Ok(Value::from((n.as_i64().unwrap() == 0) as i64));
+            } else if n.is_f64() {
+                return Ok(Value::from((n.as_f64().unwrap() == 0.) as i64));
+            }
+        }
+        _ => {}
     }
+
+    Err(format!("Invalid operation NOT {:?}", operand))
 }
 
 #[cfg(test)]
@@ -718,19 +816,19 @@ fn compute_and_test() {
         let eval = Eval::new(get_expr(r"<% a && b %>")).unwrap();
         let result = eval.run(&mut context, &HashMap::new());
 
-        assert_eq!(result.unwrap(), Operand::Number(0));
+        assert_eq!(result.unwrap(), Operand::Value(Value::from(0)));
     }
     {
         let eval = Eval::new(get_expr(r"<% c && d %>")).unwrap();
         let result = eval.run(&mut context, &HashMap::new());
 
-        assert_eq!(result.unwrap(), Operand::Number(0));
+        assert_eq!(result.unwrap(), Operand::Value(Value::from(0)));
     }
     {
         let eval = Eval::new(get_expr(r"<% c && e %>")).unwrap();
         let result = eval.run(&mut context, &HashMap::new());
 
-        assert_eq!(result.unwrap(), Operand::Number(1));
+        assert_eq!(result.unwrap(), Operand::Value(Value::from(1)));
     }
 }
 
@@ -744,19 +842,19 @@ fn compute_or_test() {
         let eval = Eval::new(get_expr(r"<% (a && b) || (c && e) %>")).unwrap();
         let result = eval.run(&mut context, &HashMap::new());
 
-        assert_eq!(result.unwrap(), Operand::Number(1));
+        assert_eq!(result.unwrap(), Operand::Value(Value::from(1)));
     }
     {
         let eval = Eval::new(get_expr(r"<% (a && b) || (c && d) %>")).unwrap();
         let result = eval.run(&mut context, &HashMap::new());
 
-        assert_eq!(result.unwrap(), Operand::Number(0));
+        assert_eq!(result.unwrap(), Operand::Value(Value::from(0)));
     }
     {
         let eval = Eval::new(get_expr(r"<% c || e %>")).unwrap();
         let result = eval.run(&mut context, &HashMap::new());
 
-        assert_eq!(result.unwrap(), Operand::Number(1));
+        assert_eq!(result.unwrap(), Operand::Value(Value::from(1)));
     }
 }
 
@@ -770,13 +868,13 @@ fn compute_complex() {
         let eval = Eval::new(get_expr(r"<% !a && ((b != a) || c <= e) %>")).unwrap();
         let result = eval.run(&mut context, &HashMap::new());
 
-        assert_eq!(result.unwrap(), Operand::Number(0));
+        assert_eq!(result.unwrap(), Operand::Value(Value::from(0)));
     }
     {
         let eval = Eval::new(get_expr(r"<% !b && ((b != a) || c <= e && !d) %>")).unwrap();
         let result = eval.run(&mut context, &HashMap::new());
 
-        assert_eq!(result.unwrap(), Operand::Number(1));
+        assert_eq!(result.unwrap(), Operand::Value(Value::from(1)));
     }
     {
         let eval = Eval::new(get_expr(
@@ -785,7 +883,7 @@ fn compute_complex() {
         .unwrap();
         let result = eval.run(&mut context, &HashMap::new());
 
-        assert_eq!(result.unwrap(), Operand::Number(1));
+        assert_eq!(result.unwrap(), Operand::Value(Value::from(1)));
     }
 }
 
@@ -799,19 +897,19 @@ fn compute_complex_object_name() {
         let eval = Eval::new(get_expr(r"<% a.b %>")).unwrap();
         let result = eval.run(&mut context, &HashMap::new());
 
-        assert_eq!(result.unwrap(), Operand::Number(2));
+        assert_eq!(result.unwrap(), Operand::Value(Value::from(2)));
     }
     {
         let eval = Eval::new(get_expr(r"<% a.c.d %>")).unwrap();
         let result = eval.run(&mut context, &HashMap::new());
 
-        assert_eq!(result.unwrap(), Operand::Number(3));
+        assert_eq!(result.unwrap(), Operand::Value(Value::from(3)));
     }
     {
         let eval = Eval::new(get_expr(r#"<% b %>"#)).unwrap();
         let result = eval.run(&mut context, &HashMap::new());
 
-        assert_eq!(result.unwrap(), Operand::Number(1));
+        assert_eq!(result.unwrap(), Operand::Value(Value::from(1)));
     }
 }
 
@@ -825,7 +923,7 @@ fn compute_assign_test() {
         let eval = Eval::new(get_expr(r"<% a = a && b %>")).unwrap();
         let result = eval.run(&mut context, &HashMap::new());
 
-        assert_eq!(result.unwrap(), Operand::Number(0));
+        assert_eq!(result.unwrap(), Operand::Value(Value::from(0)));
         assert_eq!(context.context.get("a").unwrap().as_i64().unwrap(), 0);
     }
     {
@@ -835,7 +933,7 @@ fn compute_assign_test() {
         let eval = Eval::new(get_expr(r"<% a = a && c %>")).unwrap();
         let result = eval.run(&mut context, &HashMap::new());
 
-        assert_eq!(result.unwrap(), Operand::Number(1));
+        assert_eq!(result.unwrap(), Operand::Value(Value::from(1)));
         assert_eq!(context.context.get("a").unwrap().as_i64().unwrap(), 1);
     }
     {
@@ -845,7 +943,7 @@ fn compute_assign_test() {
         let eval = Eval::new(get_expr(r"<% d = a && c %>")).unwrap();
         let result = eval.run(&mut context, &HashMap::new());
 
-        assert_eq!(result.unwrap(), Operand::Number(1));
+        assert_eq!(result.unwrap(), Operand::Value(Value::from(1)));
         assert_eq!(context.context.get("d").unwrap().as_i64().unwrap(), 1);
     }
 }
@@ -861,7 +959,7 @@ fn compute_arithmetic() {
         let eval = Eval::new(get_expr(r"<% b = a = (a + b * c - e / d) * f %>")).unwrap();
         let result = eval.run(&mut context, &HashMap::new());
 
-        assert_eq!(result.unwrap(), Operand::Number(8));
+        assert_eq!(result.unwrap(), Operand::Value(Value::from(8)));
         assert_eq!(context.context.get("a").unwrap().as_i64().unwrap(), 8);
         assert_eq!(context.context.get("b").unwrap().as_i64().unwrap(), 8);
     }

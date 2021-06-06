@@ -1,0 +1,38 @@
+// List of traits needed for wrapping regular functions to FunctionContainer.
+
+use crate::expr::*;
+use serde_json::Value;
+
+impl From<Operand> for i64 {
+    fn from(op: Operand) -> Self {
+        if let Operand::Value(val) = op {
+            if val.is_i64() {
+                return val.as_i64().unwrap();
+            }
+        }
+        0
+    }
+}
+
+impl From<i64> for Operand {
+    fn from(n: i64) -> Self {
+        Operand::Value(Value::from(n))
+    }
+}
+
+impl From<Operand> for String {
+    fn from(op: Operand) -> Self {
+        if let Operand::Value(val) = op {
+            if val.is_string() {
+                return val.as_str().unwrap().to_string();
+            }
+        }
+        "".to_string()
+    }
+}
+
+impl From<String> for Operand {
+    fn from(s: String) -> Self {
+        Operand::Value(Value::from(s))
+    }
+}

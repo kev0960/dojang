@@ -70,14 +70,13 @@ impl<'a> Dojang<'a> {
     ///
     /// ```
     /// use serde_json::Value;
-    /// let mut dojang = dojang::Dojang::new();
+    /// use dojang::dojang::*;
+    ///
+    /// let mut dj = Dojang::new();
     ///
     /// // Register a function that takes two numeric values and returns the sum of it.
-    /// dojang.add_function("func".to_string(), to_function_container2(|a: Value, b: Value| -> Value {
-    ///        Value::Number(serde_json::Number::from(
-    ///            a.as_i64().unwrap() + b.as_i64().unwrap(),
-    ///        ))
-    ///    }));
+    /// dj.add_function("func".to_string(), to_function_container2(&|a: i64, b: i64| -> i64{
+    ///     a + b }));
     /// ```
     pub fn add_function(
         &mut self,
@@ -182,16 +181,18 @@ fn get_all_file_path_under_dir(dir_name: &str) -> io::Result<Vec<PathBuf>> {
         .collect()
 }
 
-fn to_function_container<'a, T: From<Value>, V: Into<Value>>(
+pub fn to_function_container<'a, T: From<Operand>, V: Into<Operand>>(
     func: &'a dyn Fn(T) -> V,
 ) -> FunctionContainer {
-    FunctionContainer::F1(Box::new(move |v: Value| -> Value { func(v.into()).into() }))
+    FunctionContainer::F1(Box::new(move |v: Operand| -> Operand {
+        func(v.into()).into()
+    }))
 }
 
-fn to_function_container2<'a, T1: From<Value>, T2: From<Value>, V: Into<Value>>(
+pub fn to_function_container2<'a, T1: From<Operand>, T2: From<Operand>, V: Into<Operand>>(
     func: &'a dyn Fn(T1, T2) -> V,
 ) -> FunctionContainer {
-    FunctionContainer::F2(Box::new(move |v1: Value, v2: Value| -> Value {
+    FunctionContainer::F2(Box::new(move |v1: Operand, v2: Operand| -> Operand {
         func(v1.into(), v2.into()).into()
     }))
 }
@@ -256,7 +257,7 @@ fn render_from_dir() {
 }
 
 #[cfg(test)]
-fn func(a: u64, b: u64) -> u64 {
+fn func(a: i64, b: i64) -> i64 {
     a + b
 }
 
@@ -265,25 +266,17 @@ fn render_function() {
     let template = r#"func(a,b) = <%= func(a, b) %>"#.to_string();
     let mut dojang = Dojang::new();
     assert!(dojang.add("some_template".to_string(), template).is_ok());
-    dojang.add_function("func", to_function_container2(&func));
+    assert!(dojang
+        .add_function("func".to_string(), to_function_container2(&func))
+        .is_ok());
 
     assert_eq!(
         dojang
             .render(
                 "some_template",
-                serde_json::from_str(r#"{ "a" : 1 }"#).unwrap()
+                serde_json::from_str(r#"{ "a" : 1, "b" : 2 }"#).unwrap()
             )
             .unwrap(),
-        " Hi "
-    );
-
-    assert_eq!(
-        dojang
-            .render(
-                "some_template",
-                serde_json::from_str(r#"{ "a" : 2 }"#).unwrap()
-            )
-            .unwrap(),
-        "2"
+        "func(a,b) = 3"
     );
 }

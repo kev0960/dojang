@@ -7,6 +7,7 @@ pub mod dojang;
 mod eval;
 mod exec;
 mod expr;
+pub mod func_helper;
 
 pub use crate::context::FunctionContainer;
 pub use crate::dojang::Dojang;

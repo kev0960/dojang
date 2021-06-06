@@ -1,3 +1,5 @@
+use serde_json::Value;
+
 #[derive(PartialEq, Debug)]
 pub enum Op {
     Not,        // !
@@ -29,9 +31,7 @@ pub enum Keyword {
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum Operand {
-    Literal(String),
-    Number(i64),
-    Decimal(f64),
+    Value(Value),
     Array(Vec<Operand>),
     Object(Object),
     Keyword(Keyword),
@@ -312,9 +312,9 @@ impl Parser {
         parse_tree
             .last_mut()
             .unwrap()
-            .add_op(Op::Operand(Operand::Literal(
+            .add_op(Op::Operand(Operand::Value(Value::from(
                 template[start + 1..string_literal_end].to_string(),
-            )));
+            ))));
 
         Ok(string_literal_end + 1)
     }
@@ -386,11 +386,13 @@ impl Parser {
         let first_char = operand.chars().nth(0).unwrap();
         if first_char.is_ascii_digit() {
             if operand.contains('.') {
-                action.add_op(Op::Operand(Operand::Decimal(
+                action.add_op(Op::Operand(Operand::Value(Value::from(
                     operand.parse().unwrap_or(0.0),
-                )));
+                ))));
             } else {
-                action.add_op(Op::Operand(Operand::Number(operand.parse().unwrap_or(0))));
+                action.add_op(Op::Operand(Operand::Value(Value::from(
+                    operand.parse().unwrap_or(0),
+                ))));
             }
         } else {
             match operand {
@@ -476,7 +478,7 @@ fn parse_simple_expr_with_binary() {
                     name: "some".to_string(),
                 })),
                 Op::Equal,
-                Op::Operand(Operand::Number(3)),
+                Op::Operand(Operand::Value(Value::from(3))),
             ],
         })],
     };
@@ -550,7 +552,7 @@ fn parse_simple_literal() {
                     name: "some_value".to_string(),
                 })),
                 Op::Equal,
-                Op::Operand(Operand::Literal("abc".to_string())),
+                Op::Operand(Operand::Value(Value::from("abc".to_string()))),
             ],
         })],
     };
@@ -568,7 +570,7 @@ fn parse_literal_with_escape() {
                     name: "some_value".to_string(),
                 })),
                 Op::Equal,
-                Op::Operand(Operand::Literal("a\\\"bc".to_string())),
+                Op::Operand(Operand::Value(Value::from("a\\\"bc".to_string()))),
                 Op::Operand(Operand::Object(Object {
                     name: "abc".to_string(),
                 })),
@@ -669,11 +671,13 @@ fn parse_if_statement() {
                         name: "var3".to_string(),
                     })),
                     Op::Less,
-                    Op::Operand(Operand::Literal("}".to_string())),
+                    Op::Operand(Operand::Value(Value::from("}".to_string()))),
                 ],
             }),
             Action::Do(Tokens {
-                ops: vec![Op::Operand(Operand::Literal("hello".to_string()))],
+                ops: vec![Op::Operand(Operand::Value(Value::from(
+                    "hello".to_string(),
+                )))],
             }),
             Action::End(),
         ],
@@ -748,7 +752,7 @@ fn parse_if_else_statement() {
                 ],
             }),
             Action::Do(Tokens {
-                ops: vec![Op::Operand(Operand::Literal("b".to_string()))],
+                ops: vec![Op::Operand(Operand::Value(Value::from("b".to_string())))],
             }),
             Action::End(),
             Action::Else(),
@@ -758,16 +762,16 @@ fn parse_if_else_statement() {
                         name: "var1".to_string(),
                     })),
                     Op::Equal,
-                    Op::Operand(Operand::Number(3)),
+                    Op::Operand(Operand::Value(Value::from(3))),
                 ],
             }),
             Action::Do(Tokens {
-                ops: vec![Op::Operand(Operand::Literal("a".to_string()))],
+                ops: vec![Op::Operand(Operand::Value(Value::from("a".to_string())))],
             }),
             Action::End(),
             Action::Else(),
             Action::Do(Tokens {
-                ops: vec![Op::Operand(Operand::Literal("c".to_string()))],
+                ops: vec![Op::Operand(Operand::Value(Value::from("c".to_string())))],
             }),
             Action::End(),
         ],
@@ -794,7 +798,9 @@ fn parse_while_statement() {
                 ],
             }),
             Action::Do(Tokens {
-                ops: vec![Op::Operand(Operand::Literal("hello".to_string()))],
+                ops: vec![Op::Operand(Operand::Value(Value::from(
+                    "hello".to_string(),
+                )))],
             }),
             Action::End(),
         ],
@@ -821,7 +827,9 @@ fn parse_for_statement() {
                 ],
             }),
             Action::Do(Tokens {
-                ops: vec![Op::Operand(Operand::Literal("hello".to_string()))],
+                ops: vec![Op::Operand(Operand::Value(Value::from(
+                    "hello".to_string(),
+                )))],
             }),
             Action::End(),
         ],
@@ -840,9 +848,9 @@ fn parse_function() {
                     name: "func".to_string(),
                 })),
                 Op::ParenOpen,
-                Op::Operand(Operand::Number(1)),
+                Op::Operand(Operand::Value(Value::from(1))),
                 Op::Plus,
-                Op::Operand(Operand::Number(1)),
+                Op::Operand(Operand::Value(Value::from(1))),
                 Op::Comma,
                 Op::Operand(Operand::Object(Object {
                     name: "a".to_string(),

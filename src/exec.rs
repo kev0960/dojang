@@ -603,10 +603,18 @@ fn test_function() {
     let mut functions = HashMap::new();
     functions.insert(
         "func".to_string(),
-        FunctionContainer::F2(Box::new(|a: Value, b: Value| -> Value {
-            Value::Number(serde_json::Number::from(
-                a.as_i64().unwrap() + b.as_i64().unwrap(),
-            ))
+        FunctionContainer::F2(Box::new(|a: Operand, b: Operand| -> Operand {
+            let a = match a {
+                Operand::Value(v) => v.as_i64().unwrap(),
+                _ => 0,
+            };
+
+            let b = match b {
+                Operand::Value(v) => v.as_i64().unwrap(),
+                _ => 0,
+            };
+
+            Operand::Value(Value::from(a + b))
         })),
     );
 
@@ -627,19 +635,40 @@ fn test_function_complex() {
     let mut functions = HashMap::new();
     functions.insert(
         "func".to_string(),
-        FunctionContainer::F2(Box::new(|a: Value, b: Value| -> Value {
-            Value::Number(serde_json::Number::from(
-                a.as_i64().unwrap() + b.as_i64().unwrap(),
-            ))
+        FunctionContainer::F2(Box::new(|a: Operand, b: Operand| -> Operand {
+            let a = match a {
+                Operand::Value(v) => v.as_i64().unwrap(),
+                _ => 0,
+            };
+
+            let b = match b {
+                Operand::Value(v) => v.as_i64().unwrap(),
+                _ => 0,
+            };
+
+            Operand::Value(Value::from(a + b))
         })),
     );
 
     functions.insert(
         "func2".to_string(),
-        FunctionContainer::F3(Box::new(|a: Value, b: Value, c: Value| -> Value {
-            Value::Number(serde_json::Number::from(
-                a.as_i64().unwrap() * b.as_i64().unwrap() - c.as_i64().unwrap(),
-            ))
+        FunctionContainer::F3(Box::new(|a: Operand, b: Operand, c: Operand| -> Operand {
+            let a = match a {
+                Operand::Value(v) => v.as_i64().unwrap(),
+                _ => 0,
+            };
+
+            let b = match b {
+                Operand::Value(v) => v.as_i64().unwrap(),
+                _ => 0,
+            };
+
+            let c = match c {
+                Operand::Value(v) => v.as_i64().unwrap(),
+                _ => 0,
+            };
+
+            Operand::Value(Value::from(a * b - c))
         })),
     );
 
@@ -660,10 +689,18 @@ fn test_function_with_statements() {
     let mut functions = HashMap::new();
     functions.insert(
         "func".to_string(),
-        FunctionContainer::F2(Box::new(|a: Value, b: Value| -> Value {
-            Value::Number(serde_json::Number::from(
-                a.as_i64().unwrap() + b.as_i64().unwrap(),
-            ))
+        FunctionContainer::F2(Box::new(|a: Operand, b: Operand| -> Operand {
+            let a = match a {
+                Operand::Value(v) => v.as_i64().unwrap(),
+                _ => 0,
+            };
+
+            let b = match b {
+                Operand::Value(v) => v.as_i64().unwrap(),
+                _ => 0,
+            };
+
+            Operand::Value(Value::from(a + b))
         })),
     );
 

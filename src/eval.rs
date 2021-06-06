@@ -1,4 +1,6 @@
 use crate::expr::*;
+#[cfg(test)]
+use serde_json::Value;
 use std::collections::HashMap;
 
 // Evaluate the parsed expression.
@@ -330,7 +332,7 @@ fn create_simple_binary_expr() {
                 name: "some".to_string(),
             })),
             Op::Equal,
-            Op::Operand(Operand::Number(3)),
+            Op::Operand(Operand::Value(Value::from(3))),
         ],
     };
 
@@ -340,7 +342,7 @@ fn create_simple_binary_expr() {
             Expr::Op(Op::Operand(Operand::Object(Object {
                 name: "some".to_string(),
             }))),
-            Expr::Op(Op::Operand(Operand::Number(3))),
+            Expr::Op(Op::Operand(Operand::Value(Value::from(3)))),
         ],
     };
     assert_eq!(Eval::new(expr).unwrap(), expected_eval);
@@ -356,7 +358,7 @@ fn create_binary_with_unary_expr() {
             Op::Equal,
             Op::Not,
             Op::Not,
-            Op::Operand(Operand::Number(3)),
+            Op::Operand(Operand::Value(Value::from(3))),
         ],
     };
 
@@ -368,7 +370,7 @@ fn create_binary_with_unary_expr() {
             }))),
             Expr::Op(Op::Not),
             Expr::Op(Op::Not),
-            Expr::Op(Op::Operand(Operand::Number(3))),
+            Expr::Op(Op::Operand(Operand::Value(Value::from(3)))),
         ],
     };
     assert_eq!(Eval::new(expr).unwrap(), expected_eval);
@@ -500,7 +502,7 @@ fn check_assign_op() {
                 name: "a".to_string(),
             })),
             Op::And,
-            Op::Operand(Operand::Number(3)),
+            Op::Operand(Operand::Value(Value::from(3))),
         ],
     };
 
@@ -514,7 +516,7 @@ fn check_assign_op() {
             Expr::Op(Op::Operand(Operand::Object(Object {
                 name: "a".to_string(),
             }))),
-            Expr::Op(Op::Operand(Operand::Number(3))),
+            Expr::Op(Op::Operand(Operand::Value(Value::from(3)))),
         ],
     };
     assert_eq!(Eval::new(expr).unwrap(), expected_eval);
@@ -585,9 +587,9 @@ fn arithmetic_expression() {
                 name: "f".to_string(),
             })),
             Op::Plus,
-            Op::Operand(Operand::Number(1)),
+            Op::Operand(Operand::Value(Value::from(1))),
             Op::Plus,
-            Op::Operand(Operand::Number(2)),
+            Op::Operand(Operand::Value(Value::from(2))),
         ],
     };
 
@@ -618,8 +620,8 @@ fn arithmetic_expression() {
             Expr::Op(Op::Operand(Operand::Object(Object {
                 name: "f".to_string(),
             }))),
-            Expr::Op(Op::Operand(Operand::Number(1))),
-            Expr::Op(Op::Operand(Operand::Number(2))),
+            Expr::Op(Op::Operand(Operand::Value(Value::from(1)))),
+            Expr::Op(Op::Operand(Operand::Value(Value::from(2)))),
         ],
     };
     assert_eq!(Eval::new(expr).unwrap(), expected_eval);
@@ -633,9 +635,9 @@ fn function_expr() {
                 name: "func".to_string(),
             })),
             Op::ParenOpen,
-            Op::Operand(Operand::Number(1)),
+            Op::Operand(Operand::Value(Value::from(1))),
             Op::Plus,
-            Op::Operand(Operand::Number(1)),
+            Op::Operand(Operand::Value(Value::from(1))),
             Op::Comma,
             Op::Operand(Operand::Object(Object {
                 name: "a".to_string(),
@@ -661,8 +663,8 @@ fn function_expr() {
                     Eval {
                         expr: vec![
                             Expr::Op(Op::Plus),
-                            Expr::Op(Op::Operand(Operand::Number(1))),
-                            Expr::Op(Op::Operand(Operand::Number(1))),
+                            Expr::Op(Op::Operand(Operand::Value(Value::from(1)))),
+                            Expr::Op(Op::Operand(Operand::Value(Value::from(1)))),
                         ],
                     },
                     Eval {
