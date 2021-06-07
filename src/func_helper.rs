@@ -3,6 +3,23 @@
 use crate::expr::*;
 use serde_json::Value;
 
+impl From<Operand> for bool {
+    fn from(op: Operand) -> Self {
+        if let Operand::Value(val) = op {
+            if val.is_boolean() {
+                return val.as_bool().unwrap();
+            }
+        }
+        false
+    }
+}
+
+impl From<bool> for Operand {
+    fn from(b: bool) -> Self {
+        Operand::Value(Value::from(b))
+    }
+}
+
 impl From<Operand> for i64 {
     fn from(op: Operand) -> Self {
         if let Operand::Value(val) = op {
@@ -16,6 +33,23 @@ impl From<Operand> for i64 {
 
 impl From<i64> for Operand {
     fn from(n: i64) -> Self {
+        Operand::Value(Value::from(n))
+    }
+}
+
+impl From<Operand> for f64 {
+    fn from(op: Operand) -> Self {
+        if let Operand::Value(val) = op {
+            if val.is_f64() {
+                return val.as_f64().unwrap();
+            }
+        }
+        0.
+    }
+}
+
+impl From<f64> for Operand {
+    fn from(n: f64) -> Self {
         Operand::Value(Value::from(n))
     }
 }

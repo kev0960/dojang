@@ -10,7 +10,6 @@ pub struct Context {
 }
 
 pub enum FunctionContainer<'a> {
-    F0(Box<dyn Fn() -> Operand>),
     F1(Box<dyn Fn(Operand) -> Operand + 'a>),
     F2(Box<dyn Fn(Operand, Operand) -> Operand + 'a>),
     F3(Box<dyn Fn(Operand, Operand, Operand) -> Operand + 'a>),
@@ -21,7 +20,6 @@ impl<'a> fmt::Debug for FunctionContainer<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut f = f.debug_struct("FunctionContainer");
         match self {
-            FunctionContainer::F0(_) => f.field("F0", &1),
             FunctionContainer::F1(_) => f.field("F1", &1),
             FunctionContainer::F2(_) => f.field("F2", &1),
             FunctionContainer::F3(_) => f.field("F3", &1),
@@ -35,7 +33,6 @@ impl<'a> fmt::Debug for FunctionContainer<'a> {
 impl<'a> FunctionContainer<'a> {
     pub fn param_num(&self) -> usize {
         match self {
-            FunctionContainer::F0(_) => 0,
             FunctionContainer::F1(_) => 1,
             FunctionContainer::F2(_) => 2,
             FunctionContainer::F3(_) => 3,
@@ -218,7 +215,6 @@ impl ComputeExpr for Eval {
                     }
 
                     let return_value = match function_to_run {
-                        FunctionContainer::F0(f) => f(),
                         FunctionContainer::F1(f) => f(evals.pop().unwrap()),
                         FunctionContainer::F2(f) => {
                             let p2 = evals.pop().unwrap();
@@ -333,6 +329,7 @@ impl Convert for Operand {
                     panic!("Unknown number type for is_true");
                 }
                 Value::String(s) => !s.is_empty(),
+                Value::Bool(b) => *b,
                 _ => panic!("Unknown type."),
             },
             Operand::Array(arr) => !arr.is_empty(),
@@ -544,17 +541,18 @@ where
 
 fn compute_and(left: &Value, right: &Value) -> Result<Value, String> {
     match (&left, &right) {
+        (Value::Bool(l), Value::Bool(r)) => return Ok(Value::from(*l && *r)),
         (Value::String(l), Value::String(r)) => {
-            return Ok(Value::from(((l.len() != 0) && (r.len() != 0)) as i64));
+            return Ok(Value::from(((l.len() != 0) && (r.len() != 0)) as bool));
         }
         (Value::Number(l), Value::Number(r)) => {
             if l.is_i64() && r.is_i64() {
                 return Ok(Value::from(
-                    ((l.as_i64().unwrap() != 0) && (r.as_i64().unwrap() != 0)) as i64,
+                    ((l.as_i64().unwrap() != 0) && (r.as_i64().unwrap() != 0)) as bool,
                 ));
             } else if l.is_f64() && r.is_f64() {
                 return Ok(Value::from(
-                    ((l.as_f64().unwrap() != 0.) && (r.as_f64().unwrap() != 0.)) as i64,
+                    ((l.as_f64().unwrap() != 0.) && (r.as_f64().unwrap() != 0.)) as bool,
                 ));
             }
         }
@@ -566,17 +564,18 @@ fn compute_and(left: &Value, right: &Value) -> Result<Value, String> {
 
 fn compute_or(left: &Value, right: &Value) -> Result<Value, String> {
     match (&left, &right) {
+        (Value::Bool(l), Value::Bool(r)) => return Ok(Value::from(*l || *r)),
         (Value::String(l), Value::String(r)) => {
-            return Ok(Value::from(((l.len() != 0) || (r.len() != 0)) as i64));
+            return Ok(Value::from(((l.len() != 0) || (r.len() != 0)) as bool));
         }
         (Value::Number(l), Value::Number(r)) => {
             if l.is_i64() && r.is_i64() {
                 return Ok(Value::from(
-                    ((l.as_i64().unwrap() != 0) || (r.as_i64().unwrap() != 0)) as i64,
+                    ((l.as_i64().unwrap() != 0) || (r.as_i64().unwrap() != 0)) as bool,
                 ));
             } else if l.is_f64() && r.is_f64() {
                 return Ok(Value::from(
-                    ((l.as_f64().unwrap() != 0.) || (r.as_f64().unwrap() != 0.)) as i64,
+                    ((l.as_f64().unwrap() != 0.) || (r.as_f64().unwrap() != 0.)) as bool,
                 ));
             }
         }
@@ -594,11 +593,11 @@ fn compute_greater(left: &Value, right: &Value) -> Result<Value, String> {
         (Value::Number(l), Value::Number(r)) => {
             if l.is_i64() && r.is_i64() {
                 return Ok(Value::from(
-                    (l.as_i64().unwrap() > r.as_i64().unwrap()) as i64,
+                    (l.as_i64().unwrap() > r.as_i64().unwrap()) as bool,
                 ));
             } else if l.is_f64() && r.is_f64() {
                 return Ok(Value::from(
-                    (l.as_f64().unwrap() > r.as_f64().unwrap()) as i64,
+                    (l.as_f64().unwrap() > r.as_f64().unwrap()) as bool,
                 ));
             }
         }
@@ -611,16 +610,16 @@ fn compute_greater(left: &Value, right: &Value) -> Result<Value, String> {
 fn compute_greater_eq(left: &Value, right: &Value) -> Result<Value, String> {
     match (&left, &right) {
         (Value::String(l), Value::String(r)) => {
-            return Ok(Value::from((l >= r) as i64));
+            return Ok(Value::from((l >= r) as bool));
         }
         (Value::Number(l), Value::Number(r)) => {
             if l.is_i64() && r.is_i64() {
                 return Ok(Value::from(
-                    (l.as_i64().unwrap() >= r.as_i64().unwrap()) as i64,
+                    (l.as_i64().unwrap() >= r.as_i64().unwrap()) as bool,
                 ));
             } else if l.is_f64() && r.is_f64() {
                 return Ok(Value::from(
-                    (l.as_f64().unwrap() >= r.as_f64().unwrap()) as i64,
+                    (l.as_f64().unwrap() >= r.as_f64().unwrap()) as bool,
                 ));
             }
         }
@@ -633,16 +632,16 @@ fn compute_greater_eq(left: &Value, right: &Value) -> Result<Value, String> {
 fn compute_less(left: &Value, right: &Value) -> Result<Value, String> {
     match (&left, &right) {
         (Value::String(l), Value::String(r)) => {
-            return Ok(Value::from((l < r) as i64));
+            return Ok(Value::from((l < r) as bool));
         }
         (Value::Number(l), Value::Number(r)) => {
             if l.is_i64() && r.is_i64() {
                 return Ok(Value::from(
-                    (l.as_i64().unwrap() < r.as_i64().unwrap()) as i64,
+                    (l.as_i64().unwrap() < r.as_i64().unwrap()) as bool,
                 ));
             } else if l.is_f64() && r.is_f64() {
                 return Ok(Value::from(
-                    (l.as_f64().unwrap() < r.as_f64().unwrap()) as i64,
+                    (l.as_f64().unwrap() < r.as_f64().unwrap()) as bool,
                 ));
             }
         }
@@ -655,16 +654,16 @@ fn compute_less(left: &Value, right: &Value) -> Result<Value, String> {
 fn compute_less_eq(left: &Value, right: &Value) -> Result<Value, String> {
     match (&left, &right) {
         (Value::String(l), Value::String(r)) => {
-            return Ok(Value::from((l <= r) as i64));
+            return Ok(Value::from((l <= r) as bool));
         }
         (Value::Number(l), Value::Number(r)) => {
             if l.is_i64() && r.is_i64() {
                 return Ok(Value::from(
-                    (l.as_i64().unwrap() <= r.as_i64().unwrap()) as i64,
+                    (l.as_i64().unwrap() <= r.as_i64().unwrap()) as bool,
                 ));
             } else if l.is_f64() && r.is_f64() {
                 return Ok(Value::from(
-                    (l.as_f64().unwrap() <= r.as_f64().unwrap()) as i64,
+                    (l.as_f64().unwrap() <= r.as_f64().unwrap()) as bool,
                 ));
             }
         }
@@ -676,17 +675,18 @@ fn compute_less_eq(left: &Value, right: &Value) -> Result<Value, String> {
 
 fn compute_eq(left: &Value, right: &Value) -> Result<Value, String> {
     match (&left, &right) {
+        (Value::Bool(l), Value::Bool(r)) => return Ok(Value::from(*l == *r)),
         (Value::String(l), Value::String(r)) => {
-            return Ok(Value::from((l == r) as i64));
+            return Ok(Value::from((l == r) as bool));
         }
         (Value::Number(l), Value::Number(r)) => {
             if l.is_i64() && r.is_i64() {
                 return Ok(Value::from(
-                    (l.as_i64().unwrap() == r.as_i64().unwrap()) as i64,
+                    (l.as_i64().unwrap() == r.as_i64().unwrap()) as bool,
                 ));
             } else if l.is_f64() && r.is_f64() {
                 return Ok(Value::from(
-                    (l.as_f64().unwrap() == r.as_f64().unwrap()) as i64,
+                    (l.as_f64().unwrap() == r.as_f64().unwrap()) as bool,
                 ));
             }
         }
@@ -698,17 +698,18 @@ fn compute_eq(left: &Value, right: &Value) -> Result<Value, String> {
 
 fn compute_neq(left: &Value, right: &Value) -> Result<Value, String> {
     match (&left, &right) {
+        (Value::Bool(l), Value::Bool(r)) => return Ok(Value::from(*l != *r)),
         (Value::String(l), Value::String(r)) => {
-            return Ok(Value::from((l != r) as i64));
+            return Ok(Value::from((l != r) as bool));
         }
         (Value::Number(l), Value::Number(r)) => {
             if l.is_i64() && r.is_i64() {
                 return Ok(Value::from(
-                    (l.as_i64().unwrap() != r.as_i64().unwrap()) as i64,
+                    (l.as_i64().unwrap() != r.as_i64().unwrap()) as bool,
                 ));
             } else if l.is_f64() && r.is_f64() {
                 return Ok(Value::from(
-                    (l.as_f64().unwrap() != r.as_f64().unwrap()) as i64,
+                    (l.as_f64().unwrap() != r.as_f64().unwrap()) as bool,
                 ));
             }
         }
@@ -783,12 +784,13 @@ fn compute_divide(left: &Value, right: &Value) -> Result<Value, String> {
 
 fn compute_not(operand: &Value) -> Result<Value, String> {
     match &operand {
-        Value::String(s) => return Ok(Value::from((s.len() == 0) as i64)),
+        Value::Bool(b) => return Ok(Value::from(!*b)),
+        Value::String(s) => return Ok(Value::from((s.len() == 0) as bool)),
         Value::Number(n) => {
             if n.is_i64() {
-                return Ok(Value::from((n.as_i64().unwrap() == 0) as i64));
+                return Ok(Value::from((n.as_i64().unwrap() == 0) as bool));
             } else if n.is_f64() {
-                return Ok(Value::from((n.as_f64().unwrap() == 0.) as i64));
+                return Ok(Value::from((n.as_f64().unwrap() == 0.) as bool));
             }
         }
         _ => {}
@@ -816,19 +818,19 @@ fn compute_and_test() {
         let eval = Eval::new(get_expr(r"<% a && b %>")).unwrap();
         let result = eval.run(&mut context, &HashMap::new());
 
-        assert_eq!(result.unwrap(), Operand::Value(Value::from(0)));
+        assert_eq!(result.unwrap(), Operand::Value(Value::from(false)));
     }
     {
         let eval = Eval::new(get_expr(r"<% c && d %>")).unwrap();
         let result = eval.run(&mut context, &HashMap::new());
 
-        assert_eq!(result.unwrap(), Operand::Value(Value::from(0)));
+        assert_eq!(result.unwrap(), Operand::Value(Value::from(false)));
     }
     {
         let eval = Eval::new(get_expr(r"<% c && e %>")).unwrap();
         let result = eval.run(&mut context, &HashMap::new());
 
-        assert_eq!(result.unwrap(), Operand::Value(Value::from(1)));
+        assert_eq!(result.unwrap(), Operand::Value(Value::from(true)));
     }
 }
 
@@ -842,19 +844,19 @@ fn compute_or_test() {
         let eval = Eval::new(get_expr(r"<% (a && b) || (c && e) %>")).unwrap();
         let result = eval.run(&mut context, &HashMap::new());
 
-        assert_eq!(result.unwrap(), Operand::Value(Value::from(1)));
+        assert_eq!(result.unwrap(), Operand::Value(Value::from(true)))
     }
     {
         let eval = Eval::new(get_expr(r"<% (a && b) || (c && d) %>")).unwrap();
         let result = eval.run(&mut context, &HashMap::new());
 
-        assert_eq!(result.unwrap(), Operand::Value(Value::from(0)));
+        assert_eq!(result.unwrap(), Operand::Value(Value::from(false)));
     }
     {
         let eval = Eval::new(get_expr(r"<% c || e %>")).unwrap();
         let result = eval.run(&mut context, &HashMap::new());
 
-        assert_eq!(result.unwrap(), Operand::Value(Value::from(1)));
+        assert_eq!(result.unwrap(), Operand::Value(Value::from(true)));
     }
 }
 
@@ -868,13 +870,13 @@ fn compute_complex() {
         let eval = Eval::new(get_expr(r"<% !a && ((b != a) || c <= e) %>")).unwrap();
         let result = eval.run(&mut context, &HashMap::new());
 
-        assert_eq!(result.unwrap(), Operand::Value(Value::from(0)));
+        assert_eq!(result.unwrap(), Operand::Value(Value::from(false)));
     }
     {
         let eval = Eval::new(get_expr(r"<% !b && ((b != a) || c <= e && !d) %>")).unwrap();
         let result = eval.run(&mut context, &HashMap::new());
 
-        assert_eq!(result.unwrap(), Operand::Value(Value::from(1)));
+        assert_eq!(result.unwrap(), Operand::Value(Value::from(true)));
     }
     {
         let eval = Eval::new(get_expr(
@@ -883,7 +885,7 @@ fn compute_complex() {
         .unwrap();
         let result = eval.run(&mut context, &HashMap::new());
 
-        assert_eq!(result.unwrap(), Operand::Value(Value::from(1)));
+        assert_eq!(result.unwrap(), Operand::Value(Value::from(true)));
     }
 }
 
@@ -923,8 +925,8 @@ fn compute_assign_test() {
         let eval = Eval::new(get_expr(r"<% a = a && b %>")).unwrap();
         let result = eval.run(&mut context, &HashMap::new());
 
-        assert_eq!(result.unwrap(), Operand::Value(Value::from(0)));
-        assert_eq!(context.context.get("a").unwrap().as_i64().unwrap(), 0);
+        assert_eq!(result.unwrap(), Operand::Value(Value::from(false)));
+        assert_eq!(context.context.get("a").unwrap().as_bool().unwrap(), false);
     }
     {
         let context_value: Value = serde_json::from_str(context_json).unwrap();
@@ -933,8 +935,8 @@ fn compute_assign_test() {
         let eval = Eval::new(get_expr(r"<% a = a && c %>")).unwrap();
         let result = eval.run(&mut context, &HashMap::new());
 
-        assert_eq!(result.unwrap(), Operand::Value(Value::from(1)));
-        assert_eq!(context.context.get("a").unwrap().as_i64().unwrap(), 1);
+        assert_eq!(result.unwrap(), Operand::Value(Value::from(true)));
+        assert_eq!(context.context.get("a").unwrap().as_bool().unwrap(), true);
     }
     {
         let context_value: Value = serde_json::from_str(context_json).unwrap();
@@ -943,8 +945,8 @@ fn compute_assign_test() {
         let eval = Eval::new(get_expr(r"<% d = a && c %>")).unwrap();
         let result = eval.run(&mut context, &HashMap::new());
 
-        assert_eq!(result.unwrap(), Operand::Value(Value::from(1)));
-        assert_eq!(context.context.get("d").unwrap().as_i64().unwrap(), 1);
+        assert_eq!(result.unwrap(), Operand::Value(Value::from(true)));
+        assert_eq!(context.context.get("d").unwrap().as_bool().unwrap(), true);
     }
 }
 

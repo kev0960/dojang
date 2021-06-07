@@ -56,38 +56,107 @@ impl<'a> Dojang<'a> {
     /// Adds a function that can be used in the template.
     ///
     /// If there is already an existing function with same name, this will return error.
+    /// Use the appropriate function based on the number of parameters that the function take.
+    /// (e.g for functions taking 2 params, use add_function_2). Functions with 4 params are
+    /// supported at max.
+    ///
+    /// Note that the parameter of the function must be convertible to Value. Supported types are
+    /// String, i64, f64 and boolean.
     ///
     /// # Arguments
     ///
     /// * `function_name` - Name of the function.
-    /// * `function` - The body of the function. Function must be taking `serde_json::Value` as a
-    /// parameters and return `serde_json::Value`. Also, the function must be one of enum values
-    /// defined in `FunctionContainer`, which are categorized by the number of parameters.
-    ///
-    /// For example, if the function takes 2 params, it must be `FunctionContainer::F2`.
+    /// * `function` - The body of the function.
     ///
     /// # Examples
     ///
     /// ```
     /// use serde_json::Value;
-    /// use dojang::dojang::*;
+    /// use dojang::dojang::Dojang;
+    ///
+    /// fn func(a: i64) -> i64 { a + 1 }
     ///
     /// let mut dj = Dojang::new();
     ///
-    /// // Register a function that takes two numeric values and returns the sum of it.
-    /// dj.add_function("func".to_string(), to_function_container2(&|a: i64, b: i64| -> i64{
-    ///     a + b }));
+    /// dj.add_function_1("func".to_string(), &func);
+    /// dj.add_function_2("func2".to_string(), &|a: i64, b: i64| -> i64 { a + b });
     /// ```
-    pub fn add_function(
+
+    pub fn add_function_1<T, V>(
         &mut self,
         function_name: String,
-        function: FunctionContainer<'a>,
-    ) -> Result<&Self, String> {
+        function: &'a dyn Fn(T) -> V,
+    ) -> Result<&Self, String>
+    where
+        T: From<Operand>,
+        V: Into<Operand>,
+    {
         if self.functions.contains_key(&function_name) {
             return Err(format!("{} is already added as a function", function_name));
         }
 
-        self.functions.insert(function_name, function);
+        self.functions
+            .insert(function_name, to_function_container1(function));
+        Ok(self)
+    }
+
+    pub fn add_function_2<T1, T2, V>(
+        &mut self,
+        function_name: String,
+        function: &'a dyn Fn(T1, T2) -> V,
+    ) -> Result<&Self, String>
+    where
+        T1: From<Operand>,
+        T2: From<Operand>,
+        V: Into<Operand>,
+    {
+        if self.functions.contains_key(&function_name) {
+            return Err(format!("{} is already added as a function", function_name));
+        }
+
+        self.functions
+            .insert(function_name, to_function_container2(function));
+        Ok(self)
+    }
+
+    pub fn add_function_3<T1, T2, T3, V>(
+        &mut self,
+        function_name: String,
+        function: &'a dyn Fn(T1, T2, T3) -> V,
+    ) -> Result<&Self, String>
+    where
+        T1: From<Operand>,
+        T2: From<Operand>,
+        T3: From<Operand>,
+        V: Into<Operand>,
+    {
+        if self.functions.contains_key(&function_name) {
+            return Err(format!("{} is already added as a function", function_name));
+        }
+
+        self.functions
+            .insert(function_name, to_function_container3(function));
+        Ok(self)
+    }
+
+    pub fn add_function_4<T1, T2, T3, T4, V>(
+        &mut self,
+        function_name: String,
+        function: &'a dyn Fn(T1, T2, T3, T4) -> V,
+    ) -> Result<&Self, String>
+    where
+        T1: From<Operand>,
+        T2: From<Operand>,
+        T3: From<Operand>,
+        T4: From<Operand>,
+        V: Into<Operand>,
+    {
+        if self.functions.contains_key(&function_name) {
+            return Err(format!("{} is already added as a function", function_name));
+        }
+
+        self.functions
+            .insert(function_name, to_function_container4(function));
         Ok(self)
     }
 
@@ -181,7 +250,7 @@ fn get_all_file_path_under_dir(dir_name: &str) -> io::Result<Vec<PathBuf>> {
         .collect()
 }
 
-pub fn to_function_container<'a, T: From<Operand>, V: Into<Operand>>(
+pub fn to_function_container1<'a, T: From<Operand>, V: Into<Operand>>(
     func: &'a dyn Fn(T) -> V,
 ) -> FunctionContainer {
     FunctionContainer::F1(Box::new(move |v: Operand| -> Operand {
@@ -195,6 +264,39 @@ pub fn to_function_container2<'a, T1: From<Operand>, T2: From<Operand>, V: Into<
     FunctionContainer::F2(Box::new(move |v1: Operand, v2: Operand| -> Operand {
         func(v1.into(), v2.into()).into()
     }))
+}
+
+pub fn to_function_container3<
+    'a,
+    T1: From<Operand>,
+    T2: From<Operand>,
+    T3: From<Operand>,
+    V: Into<Operand>,
+>(
+    func: &'a dyn Fn(T1, T2, T3) -> V,
+) -> FunctionContainer {
+    FunctionContainer::F3(Box::new(
+        move |v1: Operand, v2: Operand, v3: Operand| -> Operand {
+            func(v1.into(), v2.into(), v3.into()).into()
+        },
+    ))
+}
+
+pub fn to_function_container4<
+    'a,
+    T1: From<Operand>,
+    T2: From<Operand>,
+    T3: From<Operand>,
+    T4: From<Operand>,
+    V: Into<Operand>,
+>(
+    func: &'a dyn Fn(T1, T2, T3, T4) -> V,
+) -> FunctionContainer {
+    FunctionContainer::F4(Box::new(
+        move |v1: Operand, v2: Operand, v3: Operand, v4: Operand| -> Operand {
+            func(v1.into(), v2.into(), v3.into(), v4.into()).into()
+        },
+    ))
 }
 
 #[test]
@@ -266,9 +368,7 @@ fn render_function() {
     let template = r#"func(a,b) = <%= func(a, b) %>"#.to_string();
     let mut dojang = Dojang::new();
     assert!(dojang.add("some_template".to_string(), template).is_ok());
-    assert!(dojang
-        .add_function("func".to_string(), to_function_container2(&func))
-        .is_ok());
+    assert!(dojang.add_function_2("func".to_string(), &func).is_ok());
 
     assert_eq!(
         dojang
