@@ -5,6 +5,7 @@ use html_escape::encode_safe;
 #[cfg(test)]
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap};
+use std::fmt;
 
 // The executer that renders the template.
 #[derive(Debug)]
@@ -131,7 +132,10 @@ impl Executer {
         }
 
         if !opened.is_empty() {
-            return Err(format!("No closing bracket found {:?}", insts));
+            return Err(format!(
+                "No closing bracket found {}",
+                pretty_print_insts(insts)
+            ));
         }
 
         // Handle break and continue.
@@ -299,6 +303,29 @@ impl Executer {
 
         Ok(eval.run(context, functions)?.to_str())
     }
+}
+
+fn pretty_print_insts(insts: &Vec<Action<Eval>>) -> String {
+    let mut result = String::new();
+
+    let mut padding = String::new();
+    for action in insts {
+        match action {
+            Action::If(_) | Action::While(_) | Action::For(_) => {
+                result.push_str(&format!("{}{:?} \n", padding, action));
+                padding.push(' ');
+            }
+            Action::End() => {
+                padding.pop();
+                result.push_str(&format!("{}{:?} \n", padding, action));
+            }
+            action => {
+                result.push_str(&format!("{}{:?} \n", padding, action));
+            }
+        }
+    }
+
+    result
 }
 
 fn convert_expr_to_eval(action: Action<Tokens>) -> Result<Action<Eval>, String> {

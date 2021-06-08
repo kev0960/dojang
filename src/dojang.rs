@@ -85,7 +85,7 @@ impl<'a> Dojang<'a> {
     pub fn add_function_1<T, V>(
         &mut self,
         function_name: String,
-        function: &'a dyn Fn(T) -> V,
+        function: &'a (dyn Fn(T) -> V + Send + Sync),
     ) -> Result<&Self, String>
     where
         T: From<Operand>,
@@ -103,7 +103,7 @@ impl<'a> Dojang<'a> {
     pub fn add_function_2<T1, T2, V>(
         &mut self,
         function_name: String,
-        function: &'a dyn Fn(T1, T2) -> V,
+        function: &'a (dyn Fn(T1, T2) -> V + Send + Sync),
     ) -> Result<&Self, String>
     where
         T1: From<Operand>,
@@ -122,7 +122,7 @@ impl<'a> Dojang<'a> {
     pub fn add_function_3<T1, T2, T3, V>(
         &mut self,
         function_name: String,
-        function: &'a dyn Fn(T1, T2, T3) -> V,
+        function: &'a (dyn Fn(T1, T2, T3) -> V + Send + Sync),
     ) -> Result<&Self, String>
     where
         T1: From<Operand>,
@@ -142,7 +142,7 @@ impl<'a> Dojang<'a> {
     pub fn add_function_4<T1, T2, T3, T4, V>(
         &mut self,
         function_name: String,
-        function: &'a dyn Fn(T1, T2, T3, T4) -> V,
+        function: &'a (dyn Fn(T1, T2, T3, T4) -> V + Send + Sync),
     ) -> Result<&Self, String>
     where
         T1: From<Operand>,
@@ -251,7 +251,7 @@ fn get_all_file_path_under_dir(dir_name: &str) -> io::Result<Vec<PathBuf>> {
 }
 
 pub fn to_function_container1<'a, T: From<Operand>, V: Into<Operand>>(
-    func: &'a dyn Fn(T) -> V,
+    func: &'a (dyn Fn(T) -> V + Send + Sync),
 ) -> FunctionContainer {
     FunctionContainer::F1(Box::new(move |v: Operand| -> Operand {
         func(v.into()).into()
@@ -259,7 +259,7 @@ pub fn to_function_container1<'a, T: From<Operand>, V: Into<Operand>>(
 }
 
 pub fn to_function_container2<'a, T1: From<Operand>, T2: From<Operand>, V: Into<Operand>>(
-    func: &'a dyn Fn(T1, T2) -> V,
+    func: &'a (dyn Fn(T1, T2) -> V + Send + Sync),
 ) -> FunctionContainer {
     FunctionContainer::F2(Box::new(move |v1: Operand, v2: Operand| -> Operand {
         func(v1.into(), v2.into()).into()
@@ -273,7 +273,7 @@ pub fn to_function_container3<
     T3: From<Operand>,
     V: Into<Operand>,
 >(
-    func: &'a dyn Fn(T1, T2, T3) -> V,
+    func: &'a (dyn Fn(T1, T2, T3) -> V + Send + Sync),
 ) -> FunctionContainer {
     FunctionContainer::F3(Box::new(
         move |v1: Operand, v2: Operand, v3: Operand| -> Operand {
@@ -290,7 +290,7 @@ pub fn to_function_container4<
     T4: From<Operand>,
     V: Into<Operand>,
 >(
-    func: &'a dyn Fn(T1, T2, T3, T4) -> V,
+    func: &'a (dyn Fn(T1, T2, T3, T4) -> V + Send + Sync),
 ) -> FunctionContainer {
     FunctionContainer::F4(Box::new(
         move |v1: Operand, v2: Operand, v3: Operand, v4: Operand| -> Operand {

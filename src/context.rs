@@ -4,16 +4,18 @@ use serde_json::{Map, Value};
 use std::collections::HashMap;
 use std::fmt;
 
+static FALSE: Value = Value::Bool(false);
+
 #[derive(Debug)]
 pub struct Context {
     pub context: Value,
 }
 
 pub enum FunctionContainer<'a> {
-    F1(Box<dyn Fn(Operand) -> Operand + 'a>),
-    F2(Box<dyn Fn(Operand, Operand) -> Operand + 'a>),
-    F3(Box<dyn Fn(Operand, Operand, Operand) -> Operand + 'a>),
-    F4(Box<dyn Fn(Operand, Operand, Operand, Operand) -> Operand + 'a>),
+    F1(Box<dyn Fn(Operand) -> Operand + 'a + Send + Sync>),
+    F2(Box<dyn Fn(Operand, Operand) -> Operand + 'a + Send + Sync>),
+    F3(Box<dyn Fn(Operand, Operand, Operand) -> Operand + 'a + Send + Sync>),
+    F4(Box<dyn Fn(Operand, Operand, Operand, Operand) -> Operand + 'a + Send + Sync>),
 }
 
 impl<'a> fmt::Debug for FunctionContainer<'a> {
@@ -58,7 +60,7 @@ impl Context {
                 value = v;
             }
             _ => {
-                return Err(format!("Mapping not exist {:?}", names));
+                return Ok(&FALSE);
             }
         }
 
@@ -67,7 +69,7 @@ impl Context {
                 Some(v) => {
                     value = v;
                 }
-                _ => return Err(format!("Mapping not exist : {} at {}", name, n)),
+                _ => return Ok(&FALSE),
             }
         }
 
@@ -319,19 +321,7 @@ pub trait Convert {
 impl Convert for Operand {
     fn is_true(&self) -> bool {
         match &self {
-            Operand::Value(v) => match v {
-                Value::Number(n) => {
-                    if n.is_i64() {
-                        return n.as_i64().unwrap() != 0;
-                    } else if n.is_f64() {
-                        return n.as_f64().unwrap() != 0.;
-                    }
-                    panic!("Unknown number type for is_true");
-                }
-                Value::String(s) => !s.is_empty(),
-                Value::Bool(b) => *b,
-                _ => panic!("Unknown type."),
-            },
+            Operand::Value(v) => value_to_boolean(v),
             Operand::Array(arr) => !arr.is_empty(),
             _ => {
                 panic!("Unconvertible object {:?}", &self)
@@ -403,7 +393,9 @@ impl ComputeOp for Op {
 
 fn convert_value_to_operand(value: Value) -> Operand {
     match value {
-        Value::Object(_) => panic!("Should not use Object in Value"),
+        // Any value object evaluates to true. This happens when like if (a) {} where a is an
+        // object that exist.
+        Value::Object(_) => Operand::Value(Value::from(true)),
         Value::Array(arr) => {
             let mut vec = Vec::new();
             for elem in arr {
@@ -539,50 +531,35 @@ where
 }
 */
 
-fn compute_and(left: &Value, right: &Value) -> Result<Value, String> {
-    match (&left, &right) {
-        (Value::Bool(l), Value::Bool(r)) => return Ok(Value::from(*l && *r)),
-        (Value::String(l), Value::String(r)) => {
-            return Ok(Value::from(((l.len() != 0) && (r.len() != 0)) as bool));
-        }
-        (Value::Number(l), Value::Number(r)) => {
-            if l.is_i64() && r.is_i64() {
-                return Ok(Value::from(
-                    ((l.as_i64().unwrap() != 0) && (r.as_i64().unwrap() != 0)) as bool,
-                ));
-            } else if l.is_f64() && r.is_f64() {
-                return Ok(Value::from(
-                    ((l.as_f64().unwrap() != 0.) && (r.as_f64().unwrap() != 0.)) as bool,
-                ));
+fn value_to_boolean(v: &Value) -> bool {
+    match v {
+        Value::Bool(v) => *v,
+        Value::String(s) => !s.is_empty(),
+        Value::Number(n) => {
+            if n.is_i64() {
+                n.as_i64().unwrap() != 0
+            } else if n.is_f64() {
+                n.as_f64().unwrap() != 0.
+            } else {
+                n.as_u64().unwrap() != 0
             }
         }
-        _ => {}
-    };
+        Value::Array(arr) => !arr.is_empty(),
+        Value::Object(_) => true,
+        Value::Null => false,
+    }
+}
 
-    Err(format!("Invalid operation between {:?} {:?}", left, right))
+fn compute_and(left: &Value, right: &Value) -> Result<Value, String> {
+    Ok(Value::from(
+        value_to_boolean(left) && value_to_boolean(right),
+    ))
 }
 
 fn compute_or(left: &Value, right: &Value) -> Result<Value, String> {
-    match (&left, &right) {
-        (Value::Bool(l), Value::Bool(r)) => return Ok(Value::from(*l || *r)),
-        (Value::String(l), Value::String(r)) => {
-            return Ok(Value::from(((l.len() != 0) || (r.len() != 0)) as bool));
-        }
-        (Value::Number(l), Value::Number(r)) => {
-            if l.is_i64() && r.is_i64() {
-                return Ok(Value::from(
-                    ((l.as_i64().unwrap() != 0) || (r.as_i64().unwrap() != 0)) as bool,
-                ));
-            } else if l.is_f64() && r.is_f64() {
-                return Ok(Value::from(
-                    ((l.as_f64().unwrap() != 0.) || (r.as_f64().unwrap() != 0.)) as bool,
-                ));
-            }
-        }
-        _ => {}
-    };
-
-    Err(format!("Invalid operation between {:?} {:?}", left, right))
+    Ok(Value::from(
+        value_to_boolean(left) || value_to_boolean(right),
+    ))
 }
 
 fn compute_greater(left: &Value, right: &Value) -> Result<Value, String> {
@@ -783,20 +760,7 @@ fn compute_divide(left: &Value, right: &Value) -> Result<Value, String> {
 }
 
 fn compute_not(operand: &Value) -> Result<Value, String> {
-    match &operand {
-        Value::Bool(b) => return Ok(Value::from(!*b)),
-        Value::String(s) => return Ok(Value::from((s.len() == 0) as bool)),
-        Value::Number(n) => {
-            if n.is_i64() {
-                return Ok(Value::from((n.as_i64().unwrap() == 0) as bool));
-            } else if n.is_f64() {
-                return Ok(Value::from((n.as_f64().unwrap() == 0.) as bool));
-            }
-        }
-        _ => {}
-    }
-
-    Err(format!("Invalid operation NOT {:?}", operand))
+    Ok(Value::from(!value_to_boolean(operand)))
 }
 
 #[cfg(test)]
@@ -964,5 +928,29 @@ fn compute_arithmetic() {
         assert_eq!(result.unwrap(), Operand::Value(Value::from(8)));
         assert_eq!(context.context.get("a").unwrap().as_i64().unwrap(), 8);
         assert_eq!(context.context.get("b").unwrap().as_i64().unwrap(), 8);
+    }
+}
+
+#[test]
+fn convert_object_to_boolean() {
+    let context_json = r#"{"a": {"b" : 1}}"#;
+    {
+        let context_value: Value = serde_json::from_str(context_json).unwrap();
+        let mut context = Context::new(context_value);
+
+        let eval = Eval::new(get_expr(r"<% !b %>")).unwrap();
+        let result = eval.run(&mut context, &HashMap::new());
+
+        assert_eq!(result.unwrap(), Operand::Value(Value::from(true)));
+    }
+
+    {
+        let context_value: Value = serde_json::from_str(context_json).unwrap();
+        let mut context = Context::new(context_value);
+
+        let eval = Eval::new(get_expr(r"<% a %>")).unwrap();
+        let result = eval.run(&mut context, &HashMap::new());
+
+        assert_eq!(result.unwrap(), Operand::Value(Value::from(true)));
     }
 }
