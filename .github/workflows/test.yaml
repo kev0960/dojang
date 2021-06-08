@@ -45,9 +45,11 @@ jobs:
         uses: EnricoMi/publish-unit-test-result-action@v1
         with:
           check_name: Test Results
+          github_token: ${{ secrets.GITHUB_TOKEN }} 
           files: results.xml
       - name: Upload to CodeCov
         uses: codecov/codecov-action@v1
         with:
+          token: ${{ secrets.CODECOV_TOKEN }}
           files: ./lcov.info
           fail_ci_if_error: true
