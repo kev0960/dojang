@@ -119,26 +119,26 @@ impl Parser {
                     match after_tag.find("%>") {
                         Some(tag_end) => {
                             let tag_to_parse;
-                            match template.chars().nth(tag_start + 2).unwrap() {
-                                '=' => {
+                            match &template[tag_start + 2..tag_start + 3] {
+                                "=" => {
                                     parse_tree.push(Action::Show(Show::ExprEscaped(Tokens {
                                         ops: Vec::new(),
                                     })));
                                     tag_to_parse = &after_tag[1..tag_end];
                                 }
-                                '-' => {
+                                "-" => {
                                     parse_tree.push(Action::Show(Show::ExprUnescaped(Tokens {
                                         ops: Vec::new(),
                                     })));
                                     tag_to_parse = &after_tag[1..tag_end];
                                 }
-                                '#' => {
+                                "#" => {
                                     // Ignore the comment.
                                     template = &after_tag[tag_end + 2..];
                                     index_offset += tag_end + 2;
                                     continue;
                                 }
-                                '%' => {
+                                "%" => {
                                     // Show '%'.
                                     parse_tree.push(Action::Show(Show::Html {
                                         start: tag_start + 2,
