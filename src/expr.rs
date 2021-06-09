@@ -2,23 +2,25 @@ use serde_json::Value;
 
 #[derive(PartialEq, Debug)]
 pub enum Op {
-    Not,        // !
-    Or,         // ||
-    And,        // &&
-    ParenOpen,  // (
-    ParenClose, // )
-    Equal,      // ==
-    NotEqual,   // !=
-    Less,       // <
-    LessEq,     // <=
-    Greater,    // >
-    GreaterEq,  // >=,
-    Assign,     // =
-    Plus,       // +
-    Minus,      // -
-    Multiply,   // *
-    Divide,     // /
-    Comma,      // ,
+    Not,         // !
+    Or,          // ||
+    And,         // &&
+    ParenOpen,   // (
+    ParenClose,  // )
+    BraketOpen,  // [
+    BraketClose, // ]
+    Equal,       // ==
+    NotEqual,    // !=
+    Less,        // <
+    LessEq,      // <=
+    Greater,     // >
+    GreaterEq,   // >=,
+    Assign,      // =
+    Plus,        // +
+    Minus,       // -
+    Multiply,    // *
+    Divide,      // /
+    Comma,       // ,
     Operand(Operand),
 }
 
@@ -204,7 +206,7 @@ impl Parser {
             // Handle Operators.
             match template[current..current + 1].find(
                 &[
-                    '&', '|', '(', ')', '!', '=', '<', '>', '+', '-', '*', '/', ',',
+                    '&', '|', '(', ')', '!', '=', '<', '>', '+', '-', '*', '/', ',', '[', ']',
                 ][..],
             ) {
                 Some(_) => {
@@ -337,6 +339,8 @@ impl Parser {
             '!' => action.add_op(Op::Not),
             '(' => action.add_op(Op::ParenOpen),
             ')' => action.add_op(Op::ParenClose),
+            '[' => action.add_op(Op::BraketOpen),
+            ']' => action.add_op(Op::BraketClose),
             '<' => action.add_op(Op::Less),
             '>' => action.add_op(Op::Greater),
             '=' => action.add_op(Op::Assign),
@@ -454,6 +458,8 @@ pub fn operator_priority(op: &Op) -> u32 {
         Op::And => 11,
         Op::Or => 12,
         Op::Assign => 14,
+        Op::BraketOpen => 100,
+        Op::BraketClose => 100,
         Op::ParenOpen => 100,
         Op::ParenClose => 100,
         _ => panic!("Oops {:?}", op),

@@ -8,13 +8,13 @@ use std::io;
 use std::path::PathBuf;
 
 /// HTML template rendering engine that should be constructed for once.
-pub struct Dojang<'a> {
+pub struct Dojang {
     /// Mapping between the template file name and the renderer along with the file content.
     templates: HashMap<String, (Executer, String)>,
-    functions: HashMap<String, FunctionContainer<'a>>,
+    functions: HashMap<String, FunctionContainer>,
 }
 
-impl<'a> Dojang<'a> {
+impl Dojang {
     /// Creates a template engine.
     pub fn new() -> Self {
         Dojang {
@@ -75,17 +75,20 @@ impl<'a> Dojang<'a> {
     /// use dojang::dojang::Dojang;
     ///
     /// fn func(a: i64) -> i64 { a + 1 }
+    /// fn func2(mut a: String, b: String) -> String {
+    ///     a.push_str(&b); a.push_str("hi"); a
+    /// }
     ///
     /// let mut dj = Dojang::new();
     ///
-    /// dj.add_function_1("func".to_string(), &func);
-    /// dj.add_function_2("func2".to_string(), &|a: i64, b: i64| -> i64 { a + b });
+    /// dj.add_function_1("func".to_string(), func);
+    /// dj.add_function_2("func2".to_string(), func2);
     /// ```
 
-    pub fn add_function_1<T, V>(
+    pub fn add_function_1<T: 'static, V: 'static>(
         &mut self,
         function_name: String,
-        function: &'a (dyn Fn(T) -> V + Send + Sync),
+        function: fn(T) -> V,
     ) -> Result<&Self, String>
     where
         T: From<Operand>,
@@ -100,10 +103,10 @@ impl<'a> Dojang<'a> {
         Ok(self)
     }
 
-    pub fn add_function_2<T1, T2, V>(
+    pub fn add_function_2<T1: 'static, T2: 'static, V: 'static>(
         &mut self,
         function_name: String,
-        function: &'a (dyn Fn(T1, T2) -> V + Send + Sync),
+        function: fn(T1, T2) -> V,
     ) -> Result<&Self, String>
     where
         T1: From<Operand>,
@@ -119,10 +122,10 @@ impl<'a> Dojang<'a> {
         Ok(self)
     }
 
-    pub fn add_function_3<T1, T2, T3, V>(
+    pub fn add_function_3<T1: 'static, T2: 'static, T3: 'static, V: 'static>(
         &mut self,
         function_name: String,
-        function: &'a (dyn Fn(T1, T2, T3) -> V + Send + Sync),
+        function: fn(T1, T2, T3) -> V,
     ) -> Result<&Self, String>
     where
         T1: From<Operand>,
@@ -139,10 +142,10 @@ impl<'a> Dojang<'a> {
         Ok(self)
     }
 
-    pub fn add_function_4<T1, T2, T3, T4, V>(
+    pub fn add_function_4<T1: 'static, T2: 'static, T3: 'static, T4: 'static, V: 'static>(
         &mut self,
         function_name: String,
-        function: &'a (dyn Fn(T1, T2, T3, T4) -> V + Send + Sync),
+        function: fn(T1, T2, T3, T4) -> V,
     ) -> Result<&Self, String>
     where
         T1: From<Operand>,
@@ -250,16 +253,21 @@ fn get_all_file_path_under_dir(dir_name: &str) -> io::Result<Vec<PathBuf>> {
         .collect()
 }
 
-pub fn to_function_container1<'a, T: From<Operand>, V: Into<Operand>>(
-    func: &'a (dyn Fn(T) -> V + Send + Sync),
+pub fn to_function_container1<T: 'static + From<Operand>, V: 'static + Into<Operand>>(
+    func: fn(T) -> V,
 ) -> FunctionContainer {
     FunctionContainer::F1(Box::new(move |v: Operand| -> Operand {
         func(v.into()).into()
     }))
 }
 
-pub fn to_function_container2<'a, T1: From<Operand>, T2: From<Operand>, V: Into<Operand>>(
-    func: &'a (dyn Fn(T1, T2) -> V + Send + Sync),
+pub fn to_function_container2<
+    'a,
+    T1: 'static + From<Operand>,
+    T2: 'static + From<Operand>,
+    V: 'static + Into<Operand>,
+>(
+    func: fn(T1, T2) -> V,
 ) -> FunctionContainer {
     FunctionContainer::F2(Box::new(move |v1: Operand, v2: Operand| -> Operand {
         func(v1.into(), v2.into()).into()
@@ -268,12 +276,12 @@ pub fn to_function_container2<'a, T1: From<Operand>, T2: From<Operand>, V: Into<
 
 pub fn to_function_container3<
     'a,
-    T1: From<Operand>,
-    T2: From<Operand>,
-    T3: From<Operand>,
-    V: Into<Operand>,
+    T1: 'static + From<Operand>,
+    T2: 'static + From<Operand>,
+    T3: 'static + From<Operand>,
+    V: 'static + Into<Operand>,
 >(
-    func: &'a (dyn Fn(T1, T2, T3) -> V + Send + Sync),
+    func: fn(T1, T2, T3) -> V,
 ) -> FunctionContainer {
     FunctionContainer::F3(Box::new(
         move |v1: Operand, v2: Operand, v3: Operand| -> Operand {
@@ -284,13 +292,13 @@ pub fn to_function_container3<
 
 pub fn to_function_container4<
     'a,
-    T1: From<Operand>,
-    T2: From<Operand>,
-    T3: From<Operand>,
-    T4: From<Operand>,
-    V: Into<Operand>,
+    T1: 'static + From<Operand>,
+    T2: 'static + From<Operand>,
+    T3: 'static + From<Operand>,
+    T4: 'static + From<Operand>,
+    V: 'static + Into<Operand>,
 >(
-    func: &'a (dyn Fn(T1, T2, T3, T4) -> V + Send + Sync),
+    func: fn(T1, T2, T3, T4) -> V,
 ) -> FunctionContainer {
     FunctionContainer::F4(Box::new(
         move |v1: Operand, v2: Operand, v3: Operand, v4: Operand| -> Operand {
@@ -368,7 +376,7 @@ fn render_function() {
     let template = r#"func(a,b) = <%= func(a, b) %>"#.to_string();
     let mut dojang = Dojang::new();
     assert!(dojang.add("some_template".to_string(), template).is_ok());
-    assert!(dojang.add_function_2("func".to_string(), &func).is_ok());
+    assert!(dojang.add_function_2("func".to_string(), func).is_ok());
 
     assert_eq!(
         dojang

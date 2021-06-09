@@ -124,9 +124,7 @@ impl Eval {
                             // Then this is the start of the function.
                             let function_tokens =
                                 get_tokens_belong_to_function(&mut expr.ops, inst_index)?;
-                            println!("Func tokens :{:?}", function_tokens);
                             let function = handle_function_tokens(function_tokens)?;
-                            println!("function {:?}", function);
 
                             // Now insert the Operand::Function as a placeholder.
                             expr.ops.insert(

@@ -5,7 +5,6 @@ use html_escape::encode_safe;
 #[cfg(test)]
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap};
-use std::fmt;
 
 // The executer that renders the template.
 #[derive(Debug)]

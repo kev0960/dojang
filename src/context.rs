@@ -11,14 +11,14 @@ pub struct Context {
     pub context: Value,
 }
 
-pub enum FunctionContainer<'a> {
-    F1(Box<dyn Fn(Operand) -> Operand + 'a + Send + Sync>),
-    F2(Box<dyn Fn(Operand, Operand) -> Operand + 'a + Send + Sync>),
-    F3(Box<dyn Fn(Operand, Operand, Operand) -> Operand + 'a + Send + Sync>),
-    F4(Box<dyn Fn(Operand, Operand, Operand, Operand) -> Operand + 'a + Send + Sync>),
+pub enum FunctionContainer {
+    F1(Box<dyn Fn(Operand) -> Operand + Send + Sync>),
+    F2(Box<dyn Fn(Operand, Operand) -> Operand + Send + Sync>),
+    F3(Box<dyn Fn(Operand, Operand, Operand) -> Operand + Send + Sync>),
+    F4(Box<dyn Fn(Operand, Operand, Operand, Operand) -> Operand + Send + Sync>),
 }
 
-impl<'a> fmt::Debug for FunctionContainer<'a> {
+impl fmt::Debug for FunctionContainer {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut f = f.debug_struct("FunctionContainer");
         match self {
@@ -32,7 +32,7 @@ impl<'a> fmt::Debug for FunctionContainer<'a> {
     }
 }
 
-impl<'a> FunctionContainer<'a> {
+impl FunctionContainer {
     pub fn param_num(&self) -> usize {
         match self {
             FunctionContainer::F1(_) => 1,
