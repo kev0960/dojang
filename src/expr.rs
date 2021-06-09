@@ -2,25 +2,25 @@ use serde_json::Value;
 
 #[derive(PartialEq, Debug)]
 pub enum Op {
-    Not,         // !
-    Or,          // ||
-    And,         // &&
-    ParenOpen,   // (
-    ParenClose,  // )
-    BraketOpen,  // [
-    BraketClose, // ]
-    Equal,       // ==
-    NotEqual,    // !=
-    Less,        // <
-    LessEq,      // <=
-    Greater,     // >
-    GreaterEq,   // >=,
-    Assign,      // =
-    Plus,        // +
-    Minus,       // -
-    Multiply,    // *
-    Divide,      // /
-    Comma,       // ,
+    Not,          // !
+    Or,           // ||
+    And,          // &&
+    ParenOpen,    // (
+    ParenClose,   // )
+    BracketOpen,  // [
+    BracketClose, // ]
+    Equal,        // ==
+    NotEqual,     // !=
+    Less,         // <
+    LessEq,       // <=
+    Greater,      // >
+    GreaterEq,    // >=,
+    Assign,       // =
+    Plus,         // +
+    Minus,        // -
+    Multiply,     // *
+    Divide,       // /
+    Comma,        // ,
     Operand(Operand),
 }
 
@@ -339,8 +339,8 @@ impl Parser {
             '!' => action.add_op(Op::Not),
             '(' => action.add_op(Op::ParenOpen),
             ')' => action.add_op(Op::ParenClose),
-            '[' => action.add_op(Op::BraketOpen),
-            ']' => action.add_op(Op::BraketClose),
+            '[' => action.add_op(Op::BracketOpen),
+            ']' => action.add_op(Op::BracketClose),
             '<' => action.add_op(Op::Less),
             '>' => action.add_op(Op::Greater),
             '=' => action.add_op(Op::Assign),
@@ -458,8 +458,8 @@ pub fn operator_priority(op: &Op) -> u32 {
         Op::And => 11,
         Op::Or => 12,
         Op::Assign => 14,
-        Op::BraketOpen => 100,
-        Op::BraketClose => 100,
+        Op::BracketOpen => 100,
+        Op::BracketClose => 100,
         Op::ParenOpen => 100,
         Op::ParenClose => 100,
         _ => panic!("Oops {:?}", op),
@@ -865,6 +865,37 @@ fn parse_function() {
                 Op::Operand(Operand::Object(Object {
                     name: "b".to_string(),
                 })),
+                Op::ParenClose,
+                Op::Plus,
+                Op::Operand(Operand::Object(Object {
+                    name: "x".to_string(),
+                })),
+            ],
+        })],
+    };
+
+    assert_eq!(result.unwrap(), expected_expr);
+}
+
+#[test]
+fn parse_braket() {
+    let result = Parser::parse(r#"<% func(a[1][2]) + x %>"#);
+    let expected_expr = Parser {
+        parse_tree: vec![Action::Do(Tokens {
+            ops: vec![
+                Op::Operand(Operand::Object(Object {
+                    name: "func".to_string(),
+                })),
+                Op::ParenOpen,
+                Op::Operand(Operand::Object(Object {
+                    name: "a".to_string(),
+                })),
+                Op::BracketOpen,
+                Op::Operand(Operand::Value(Value::from(1))),
+                Op::BracketClose,
+                Op::BracketOpen,
+                Op::Operand(Operand::Value(Value::from(2))),
+                Op::BracketClose,
                 Op::ParenClose,
                 Op::Plus,
                 Op::Operand(Operand::Object(Object {

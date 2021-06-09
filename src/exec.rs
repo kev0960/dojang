@@ -733,3 +733,63 @@ fn test_function_with_statements() {
     let result = executer.render(&mut context, &functions, template).unwrap();
     assert_eq!(result, "(2, 2) (3, 3) (4, 4) (5, 5) ".to_string());
 }
+
+#[test]
+fn test_accessor() {
+    let template = r#"<%= 10000 + a[x][y + "c"][z] - 3%>"#;
+    let executer = Executer::new(Parser::parse(template).unwrap()).unwrap();
+    let context_json = r#"{"a" : { "b" : { "cc" : { "1" : 1234}}}, "x" : "b", "y" : "c", "z" : 1}"#;
+
+    let context_value: Value = serde_json::from_str(context_json).unwrap();
+    let mut context = Context::new(context_value);
+
+    let result = executer
+        .render(&mut context, &HashMap::new(), template)
+        .unwrap();
+    assert_eq!(result, "11231".to_string());
+}
+
+#[test]
+fn test_accessor_and_function() {
+    let template = r#"<%= a[x][func2(y, "c")+"d"][func(z)] %>"#;
+    let executer = Executer::new(Parser::parse(template).unwrap()).unwrap();
+
+    let context_json =
+        r#"{"a" : { "b" : { "ccd" : { "2" : 1234}}}, "x" : "b", "y" : "c", "z" : 1}"#;
+    let context_value: Value = serde_json::from_str(context_json).unwrap();
+    let mut context = Context::new(context_value);
+
+    let mut functions = HashMap::new();
+    functions.insert(
+        "func2".to_string(),
+        FunctionContainer::F2(Box::new(|a: Operand, b: Operand| -> Operand {
+            let mut a = match a {
+                Operand::Value(v) => v.as_str().unwrap().to_string(),
+                _ => "".to_string(),
+            };
+
+            let b = match b {
+                Operand::Value(v) => v.as_str().unwrap().to_string(),
+                _ => "".to_string(),
+            };
+
+            a.push_str(&b);
+            Operand::Value(Value::from(a))
+        })),
+    );
+
+    functions.insert(
+        "func".to_string(),
+        FunctionContainer::F1(Box::new(|a: Operand| -> Operand {
+            let a = match a {
+                Operand::Value(v) => v.as_i64().unwrap(),
+                _ => 0,
+            };
+
+            Operand::Value(Value::from(a + 1))
+        })),
+    );
+
+    let result = executer.render(&mut context, &functions, template).unwrap();
+    assert_eq!(result, "1234".to_string());
+}

@@ -192,57 +192,72 @@ impl ComputeExpr for Eval {
                         }
                     }
                 },
-                Expr::Function(function) => {
-                    let function_to_run;
+                Expr::Function(function) => match function.is_accessor {
+                    false => {
+                        let function_to_run;
 
-                    match functions.get(&function.name) {
-                        Some(f) => function_to_run = f,
-                        None => {
-                            return Err(format!(
-                                "Function {:?} is not registered; Registered : {:?}",
-                                function.name, functions
-                            ))
+                        match functions.get(&function.name) {
+                            Some(f) => function_to_run = f,
+                            None => {
+                                return Err(format!(
+                                    "Function {:?} is not registered; Registered : {:?}",
+                                    function.name, functions
+                                ))
+                            }
                         }
+
+                        let params = &function.params;
+                        if params.len() != function_to_run.param_num() {
+                            return Err(format!("# of function params mistmatch! {} takes {} params but provided {} params", function.name, function_to_run.param_num(), params.len()));
+                        }
+
+                        let mut evals = Vec::new();
+
+                        for param in params {
+                            evals.push(param.run(context, functions)?);
+                        }
+
+                        let return_value = match function_to_run {
+                            FunctionContainer::F1(f) => f(evals.pop().unwrap()),
+                            FunctionContainer::F2(f) => {
+                                let p2 = evals.pop().unwrap();
+                                let p1 = evals.pop().unwrap();
+
+                                f(p1, p2)
+                            }
+                            FunctionContainer::F3(f) => {
+                                let p3 = evals.pop().unwrap();
+                                let p2 = evals.pop().unwrap();
+                                let p1 = evals.pop().unwrap();
+
+                                f(p1, p2, p3)
+                            }
+                            FunctionContainer::F4(f) => {
+                                let p4 = evals.pop().unwrap();
+                                let p3 = evals.pop().unwrap();
+                                let p2 = evals.pop().unwrap();
+                                let p1 = evals.pop().unwrap();
+
+                                f(p1, p2, p3, p4)
+                            }
+                        };
+
+                        operands.push(return_value);
                     }
+                    true => {
+                        let params = &function.params;
 
-                    let params = &function.params;
-                    if params.len() != function_to_run.param_num() {
-                        return Err(format!("# of function params mistmatch! {} takes {} params but provided {} params", function.name, function_to_run.param_num(), params.len()));
+                        let mut obj_name = function.name.clone();
+                        for param in params {
+                            obj_name.push_str(".");
+                            obj_name.push_str(&param.run(context, functions)?.to_str())
+                        }
+
+                        operands.push(convert_value_to_operand(
+                            context.get_value(&obj_name)?.clone(),
+                        ))
                     }
-
-                    let mut evals = Vec::new();
-
-                    for param in params {
-                        evals.push(param.run(context, functions)?);
-                    }
-
-                    let return_value = match function_to_run {
-                        FunctionContainer::F1(f) => f(evals.pop().unwrap()),
-                        FunctionContainer::F2(f) => {
-                            let p2 = evals.pop().unwrap();
-                            let p1 = evals.pop().unwrap();
-
-                            f(p1, p2)
-                        }
-                        FunctionContainer::F3(f) => {
-                            let p3 = evals.pop().unwrap();
-                            let p2 = evals.pop().unwrap();
-                            let p1 = evals.pop().unwrap();
-
-                            f(p1, p2, p3)
-                        }
-                        FunctionContainer::F4(f) => {
-                            let p4 = evals.pop().unwrap();
-                            let p3 = evals.pop().unwrap();
-                            let p2 = evals.pop().unwrap();
-                            let p1 = evals.pop().unwrap();
-
-                            f(p1, p2, p3, p4)
-                        }
-                    };
-
-                    operands.push(return_value);
-                }
+                },
             }
         }
 
@@ -699,7 +714,9 @@ fn compute_neq(left: &Value, right: &Value) -> Result<Value, String> {
 fn compute_add(left: &Value, right: &Value) -> Result<Value, String> {
     match (&left, &right) {
         (Value::String(l), Value::String(r)) => {
-            return Ok(Value::from(l.clone().push_str(r)));
+            let mut left_clone = l.clone();
+            left_clone.push_str(r);
+            return Ok(Value::from(left_clone));
         }
         (Value::Number(l), Value::Number(r)) => {
             if l.is_i64() && r.is_i64() {

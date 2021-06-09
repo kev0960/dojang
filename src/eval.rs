@@ -19,6 +19,9 @@ pub enum Expr {
 pub struct Function {
     pub name: String,
     pub params: Vec<Eval>,
+
+    // Accessor (e.g obj[]) is treated as a function.
+    pub is_accessor: bool,
 }
 
 impl Eval {
@@ -136,6 +139,20 @@ impl Eval {
                             // replaced by the Expr::Function.
                             function_name_to_function.insert(function.name.clone(), function);
                         }
+                        Some(Op::BracketOpen) => {
+                            // Then this is the start of the property accessor ([])
+                            let accessor_tokens =
+                                get_tokens_belong_to_accessor(&mut expr.ops, inst_index)?;
+                            let accessor = handle_accessor_tokens(accessor_tokens)?;
+
+                            // Now insert the Operand::Function as a placeholder.
+                            expr.ops.insert(
+                                inst_index,
+                                Op::Operand(Operand::Function(accessor.name.clone())),
+                            );
+
+                            function_name_to_function.insert(accessor.name.clone(), accessor);
+                        }
                         _ => {}
                     },
                     _ => {}
@@ -198,10 +215,59 @@ fn get_tokens_belong_to_function(
     }
 
     if opened_paren != 0 {
-        return Err(format!("Function does not have closing ): {:?}", ops));
+        return Err(format!("Function does not have closing ')'. {:?}", ops));
     }
 
     Ok(ops.drain(function_start..inst_index + 1).collect())
+}
+
+fn get_tokens_belong_to_accessor(
+    ops: &mut Vec<Op>,
+    mut inst_index: usize,
+) -> Result<Vec<Op>, String> {
+    let function_start = inst_index;
+
+    inst_index += 2;
+
+    let mut opened_paren = 1;
+    loop {
+        while inst_index < ops.len() {
+            match ops.get(inst_index).unwrap() {
+                Op::BracketOpen => {
+                    opened_paren += 1;
+                }
+                Op::BracketClose => {
+                    opened_paren -= 1;
+                    if opened_paren == 0 {
+                        break;
+                    }
+                }
+                _ => {}
+            }
+
+            inst_index += 1;
+        }
+
+        // Property accessor can be chanined.
+        // (e.g obj[...][...][...])
+        // In this case, entire [...][...][...] will be included.
+        inst_index += 1;
+        match ops.get(inst_index) {
+            Some(Op::BracketOpen) => {
+                opened_paren += 1;
+                inst_index += 1;
+            }
+            _ => {
+                break;
+            }
+        }
+    }
+
+    if opened_paren != 0 {
+        return Err(format!("Function does not have closing ']'. {:?}", ops));
+    }
+
+    Ok(ops.drain(function_start..inst_index).collect())
 }
 
 fn handle_function_tokens(mut ops: Vec<Op>) -> Result<Function, String> {
@@ -262,6 +328,65 @@ fn handle_function_tokens(mut ops: Vec<Op>) -> Result<Function, String> {
     Ok(Function {
         name: function_name,
         params,
+        is_accessor: false,
+    })
+}
+
+fn handle_accessor_tokens(mut ops: Vec<Op>) -> Result<Function, String> {
+    // Should be at least accessor_name, [, ].
+    assert!(ops.len() >= 3);
+
+    let accessor_name = match ops.get(0).unwrap() {
+        Op::Operand(operand) => match operand {
+            Operand::Object(object) => object.name.clone(),
+            _ => panic!("Accessor name is not object."),
+        },
+        _ => panic!("Accessor name is not proper operator."),
+    };
+
+    let mut inst_index = 0;
+    let mut opened_paren = 0;
+    let mut accessors = Vec::new();
+
+    // Remove function name.
+    ops.drain(0..1);
+
+    while inst_index < ops.len() {
+        match ops.get(inst_index).unwrap() {
+            Op::BracketOpen => {
+                opened_paren += 1;
+            }
+            Op::BracketClose => {
+                opened_paren -= 1;
+
+                if opened_paren == 0 {
+                    let tokens = Tokens {
+                        ops: ops.drain(1..inst_index).collect(),
+                    };
+
+                    accessors.push(Eval::new(tokens)?);
+                    inst_index = 0;
+
+                    // Remove '[' and ']'.
+                    ops.drain(0..2);
+
+                    continue;
+                }
+            }
+            _ => {}
+        }
+
+        inst_index += 1;
+    }
+
+    if !ops.is_empty() {
+        return Err(format!("Accessor parsing error {:?}", ops));
+    }
+
+    Ok(Function {
+        name: accessor_name,
+        params: accessors,
+        is_accessor: true,
     })
 }
 
@@ -676,6 +801,61 @@ fn function_expr() {
                         })))],
                     },
                 ],
+                is_accessor: false,
+            }),
+            Expr::Op(Op::Operand(Operand::Object(Object {
+                name: "x".to_string(),
+            }))),
+        ],
+    };
+    assert_eq!(Eval::new(expr).unwrap(), expected_eval);
+}
+
+#[test]
+fn bracket_expr() {
+    let expr = Tokens {
+        ops: vec![
+            Op::Operand(Operand::Object(Object {
+                name: "func".to_string(),
+            })),
+            Op::ParenOpen,
+            Op::Operand(Operand::Object(Object {
+                name: "a".to_string(),
+            })),
+            Op::BracketOpen,
+            Op::Operand(Operand::Value(Value::from(1))),
+            Op::BracketClose,
+            Op::BracketOpen,
+            Op::Operand(Operand::Value(Value::from(2))),
+            Op::BracketClose,
+            Op::ParenClose,
+            Op::Plus,
+            Op::Operand(Operand::Object(Object {
+                name: "x".to_string(),
+            })),
+        ],
+    };
+
+    let expected_eval = Eval {
+        expr: vec![
+            Expr::Op(Op::Plus),
+            Expr::Function(Function {
+                name: "func".to_string(),
+                params: vec![Eval {
+                    expr: vec![Expr::Function(Function {
+                        name: "a".to_string(),
+                        params: vec![
+                            Eval {
+                                expr: vec![Expr::Op(Op::Operand(Operand::Value(Value::from(1))))],
+                            },
+                            Eval {
+                                expr: vec![Expr::Op(Op::Operand(Operand::Value(Value::from(2))))],
+                            },
+                        ],
+                        is_accessor: true,
+                    })],
+                }],
+                is_accessor: false,
             }),
             Expr::Op(Op::Operand(Operand::Object(Object {
                 name: "x".to_string(),
