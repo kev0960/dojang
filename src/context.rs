@@ -48,10 +48,9 @@ impl Context {
         Context { context }
     }
 
-    fn get_value(&self, name: &str) -> Result<&Value, String> {
-        let names = name.split(".").collect::<Vec<&str>>();
+    fn get_value(&self, names: &Vec<&str>) -> Result<&Value, String> {
         if names.is_empty() {
-            return Err(format!("Mapping not exist : {}", name));
+            return Err(format!("Mapping not exist : {:?}", names));
         }
 
         let mut value;
@@ -76,7 +75,7 @@ impl Context {
         Ok(value)
     }
 
-    fn get_nth_from_array(&self, name: &str, index: usize) -> Result<Option<Value>, String> {
+    fn get_nth_from_array(&self, name: &Vec<&str>, index: usize) -> Result<Option<Value>, String> {
         let value = self.get_value(name)?;
         match value {
             Value::Array(arr) => match arr.get(index) {
@@ -92,10 +91,9 @@ impl Context {
         }
     }
 
-    fn set_value(&mut self, name: &str, provided: &Value) -> Result<(), String> {
-        let names = name.split(".").collect::<Vec<&str>>();
+    fn set_value(&mut self, names: &Vec<&str>, provided: &Value) -> Result<(), String> {
         if names.is_empty() {
-            return Err(format!("Mapping not exist : {}", name));
+            return Err(format!("Mapping not exist : {:?}", names));
         }
 
         let mut value: &mut Value;
@@ -107,7 +105,7 @@ impl Context {
                 if names.len() > 1 {
                     return Err(format!(
                         "Local variable should not use dot operator. {:?}",
-                        name
+                        names.get(0).unwrap()
                     ));
                 }
 
@@ -129,7 +127,7 @@ impl Context {
                 Some(v) => {
                     value = v;
                 }
-                _ => return Err(format!("Mapping not exist : {} at {}", name, n)),
+                _ => return Err(format!("Mapping not exist : {:?} at {}", names, n)),
             }
         }
 
@@ -208,7 +206,8 @@ impl ComputeExpr for Eval {
 
                         let params = &function.params;
                         if params.len() != function_to_run.param_num() {
-                            return Err(format!("# of function params mistmatch! {} takes {} params but provided {} params", function.name, function_to_run.param_num(), params.len()));
+                            return Err(format!("# of function params mistmatch! {} takes {} params but provided {} params",
+                                    function.name, function_to_run.param_num(), params.len()));
                         }
 
                         let mut evals = Vec::new();
@@ -247,14 +246,15 @@ impl ComputeExpr for Eval {
                     true => {
                         let params = &function.params;
 
-                        let mut obj_name = function.name.clone();
+                        let mut obj_name = vec![function.name.clone()];
                         for param in params {
-                            obj_name.push_str(".");
-                            obj_name.push_str(&param.run(context, functions)?.to_str())
+                            obj_name.push(param.run(context, functions)?.to_str())
                         }
 
                         operands.push(convert_value_to_operand(
-                            context.get_value(&obj_name)?.clone(),
+                            context
+                                .get_value(&obj_name.iter().map(String::as_str).collect())?
+                                .clone(),
                         ))
                     }
                 },
@@ -270,7 +270,7 @@ impl ComputeExpr for Eval {
 
         match operands.pop().unwrap() {
             Operand::Object(obj) => Ok(convert_value_to_operand(
-                context.get_value(&obj.name)?.clone(),
+                context.get_value(&obj.name.split(".").collect())?.clone(),
             )),
             operand => Ok(operand),
         }
@@ -318,9 +318,9 @@ impl ComputeExpr for Eval {
             }
         }
 
-        match context.get_nth_from_array(&container_name, for_index)? {
+        match context.get_nth_from_array(&container_name.split(".").collect(), for_index)? {
             Some(element) => {
-                context.set_value(object_name, &element)?;
+                context.set_value(&object_name.split(".").collect(), &element)?;
                 Ok(true)
             }
             _ => Ok(false),
@@ -456,7 +456,7 @@ fn get_value_from_operand<'a>(
     operand: &'a Operand,
 ) -> Result<&'a Value, String> {
     if let Operand::Object(obj) = operand {
-        match context.get_value(&obj.name) {
+        match context.get_value(&obj.name.split(".").collect()) {
             Ok(v) => Ok(v),
             Err(e) => {
                 return Err(e);
@@ -495,11 +495,16 @@ fn compute_simple_assign(
     if let Operand::Object(ref object) = left {
         match right {
             Operand::Object(right_obj) => {
-                let val = context.get_value(&right_obj.name)?.clone();
-                context.set_value(&object.name, &val)?;
+                let val = context
+                    .get_value(&right_obj.name.split(".").collect())?
+                    .clone();
+                context.set_value(&object.name.split(".").collect(), &val)?;
             }
             _ => {
-                context.set_value(&object.name, &convert_operand_to_value(right))?;
+                context.set_value(
+                    &object.name.split(".").collect(),
+                    &convert_operand_to_value(right),
+                )?;
             }
         }
         Ok(left)

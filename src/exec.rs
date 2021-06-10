@@ -793,3 +793,18 @@ fn test_accessor_and_function() {
     let result = executer.render(&mut context, &functions, template).unwrap();
     assert_eq!(result, "1234".to_string());
 }
+
+#[test]
+fn test_accessor_with_dot() {
+    let template = r#"<%= 10000 + a[x].cc[z] - 3%>"#;
+    let executer = Executer::new(Parser::parse(template).unwrap()).unwrap();
+    let context_json = r#"{"a" : { "b" : { "cc" : { "1" : 1234}}}, "x" : "b", "y" : "c", "z" : 1}"#;
+
+    let context_value: Value = serde_json::from_str(context_json).unwrap();
+    let mut context = Context::new(context_value);
+
+    let result = executer
+        .render(&mut context, &HashMap::new(), template)
+        .unwrap();
+    assert_eq!(result, "11231".to_string());
+}

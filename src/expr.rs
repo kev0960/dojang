@@ -21,6 +21,7 @@ pub enum Op {
     Multiply,     // *
     Divide,       // /
     Comma,        // ,
+    Dot,          // .
     Operand(Operand),
 }
 
@@ -206,7 +207,7 @@ impl Parser {
             // Handle Operators.
             match template[current..current + 1].find(
                 &[
-                    '&', '|', '(', ')', '!', '=', '<', '>', '+', '-', '*', '/', ',', '[', ']',
+                    '&', '|', '(', ')', '!', '=', '<', '>', '+', '-', '*', '/', ',', '[', ']', '.',
                 ][..],
             ) {
                 Some(_) => {
@@ -349,6 +350,7 @@ impl Parser {
             '*' => action.add_op(Op::Multiply),
             '/' => action.add_op(Op::Divide),
             ',' => action.add_op(Op::Comma),
+            '.' => action.add_op(Op::Dot),
             c => {
                 return Err(format!(
                     "Unknown operator at '{}', unknown : {}",
@@ -900,6 +902,35 @@ fn parse_braket() {
                 Op::Plus,
                 Op::Operand(Operand::Object(Object {
                     name: "x".to_string(),
+                })),
+            ],
+        })],
+    };
+
+    assert_eq!(result.unwrap(), expected_expr);
+}
+
+#[test]
+fn parse_property_accessor() {
+    let result = Parser::parse(r#"<% 1 + a.b[123].c %>"#);
+    let expected_expr = Parser {
+        parse_tree: vec![Action::Do(Tokens {
+            ops: vec![
+                Op::Operand(Operand::Value(Value::from(1))),
+                Op::Plus,
+                Op::Operand(Operand::Object(Object {
+                    name: "a".to_string(),
+                })),
+                Op::Dot,
+                Op::Operand(Operand::Object(Object {
+                    name: "b".to_string(),
+                })),
+                Op::BracketOpen,
+                Op::Operand(Operand::Value(Value::from(123))),
+                Op::BracketClose,
+                Op::Dot,
+                Op::Operand(Operand::Object(Object {
+                    name: "c".to_string(),
                 })),
             ],
         })],

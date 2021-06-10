@@ -1,5 +1,4 @@
 use crate::expr::*;
-#[cfg(test)]
 use serde_json::Value;
 use std::collections::HashMap;
 
@@ -139,8 +138,8 @@ impl Eval {
                             // replaced by the Expr::Function.
                             function_name_to_function.insert(function.name.clone(), function);
                         }
-                        Some(Op::BracketOpen) => {
-                            // Then this is the start of the property accessor ([])
+                        Some(Op::BracketOpen) | Some(Op::Dot) => {
+                            // Then this is the start of the property accessor ([] or .)
                             let accessor_tokens =
                                 get_tokens_belong_to_accessor(&mut expr.ops, inst_index)?;
                             let accessor = handle_accessor_tokens(accessor_tokens)?;
@@ -227,11 +226,12 @@ fn get_tokens_belong_to_accessor(
 ) -> Result<Vec<Op>, String> {
     let function_start = inst_index;
 
-    inst_index += 2;
+    inst_index += 1;
 
-    let mut opened_paren = 1;
-    loop {
+    let mut opened_paren = 0;
+    'single_property: loop {
         while inst_index < ops.len() {
+            println!("{:?}", ops.get(inst_index));
             match ops.get(inst_index).unwrap() {
                 Op::BracketOpen => {
                     opened_paren += 1;
@@ -242,7 +242,27 @@ fn get_tokens_belong_to_accessor(
                         break;
                     }
                 }
-                _ => {}
+                Op::Dot => {
+                    if opened_paren == 0 {
+                        match ops.get(inst_index + 1) {
+                            Some(Op::Operand(Operand::Object(_))) => {
+                                inst_index += 2;
+                                continue;
+                            }
+                            _ => {
+                                return Err(format!(
+                                    "Only raw string should come after dot, you gave : {:?}",
+                                    ops.get(inst_index + 1)
+                                ));
+                            }
+                        }
+                    }
+                }
+                _ => {
+                    if opened_paren == 0 {
+                        break 'single_property;
+                    }
+                }
             }
 
             inst_index += 1;
@@ -251,13 +271,13 @@ fn get_tokens_belong_to_accessor(
         // Property accessor can be chanined.
         // (e.g obj[...][...][...])
         // In this case, entire [...][...][...] will be included.
-        inst_index += 1;
-        match ops.get(inst_index) {
-            Some(Op::BracketOpen) => {
-                opened_paren += 1;
+        match ops.get(inst_index + 1) {
+            Some(Op::BracketOpen) | Some(Op::Dot) => {
                 inst_index += 1;
+                continue;
             }
             _ => {
+                inst_index += 1;
                 break;
             }
         }
@@ -370,6 +390,20 @@ fn handle_accessor_tokens(mut ops: Vec<Op>) -> Result<Function, String> {
                     // Remove '[' and ']'.
                     ops.drain(0..2);
 
+                    continue;
+                }
+            }
+            Op::Dot => {
+                if opened_paren == 0 {
+                    if let Op::Operand(Operand::Object(object)) = ops.get(inst_index + 1).unwrap() {
+                        accessors.push(Eval {
+                            expr: vec![Expr::Op(Op::Operand(Operand::Value(Value::from(
+                                object.name.clone(),
+                            ))))],
+                        })
+                    }
+
+                    ops.drain(inst_index..inst_index + 2);
                     continue;
                 }
             }
@@ -863,4 +897,48 @@ fn bracket_expr() {
         ],
     };
     assert_eq!(Eval::new(expr).unwrap(), expected_eval);
+}
+
+#[test]
+fn get_tokens_belong_to_accessor_test() {
+    let mut tokens = vec![
+        Op::Operand(Operand::Object(Object {
+            name: "a".to_string(),
+        })),
+        Op::Dot,
+        Op::Operand(Operand::Object(Object {
+            name: "b".to_string(),
+        })),
+        Op::BracketOpen,
+        Op::Operand(Operand::Value(Value::from(123))),
+        Op::BracketClose,
+        Op::Dot,
+        Op::Operand(Operand::Object(Object {
+            name: "c".to_string(),
+        })),
+        Op::Plus,
+        Op::Operand(Operand::Value(Value::from(123))),
+    ];
+
+    let expected = vec![
+        Op::Operand(Operand::Object(Object {
+            name: "a".to_string(),
+        })),
+        Op::Dot,
+        Op::Operand(Operand::Object(Object {
+            name: "b".to_string(),
+        })),
+        Op::BracketOpen,
+        Op::Operand(Operand::Value(Value::from(123))),
+        Op::BracketClose,
+        Op::Dot,
+        Op::Operand(Operand::Object(Object {
+            name: "c".to_string(),
+        })),
+    ];
+
+    assert_eq!(
+        get_tokens_belong_to_accessor(&mut tokens, 0).unwrap(),
+        expected
+    );
 }
