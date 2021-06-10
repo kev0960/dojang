@@ -380,10 +380,7 @@ fn render_function() {
 
     assert_eq!(
         dojang
-            .render(
-                "some_template",
-                serde_json::from_str(r#"{ "a" : 1, "b" : 2 }"#).unwrap()
-            )
+            .render("some_template", serde_json::json!({"a" : 1, "b" : 2 }))
             .unwrap(),
         "func(a,b) = 3"
     );

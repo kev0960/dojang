@@ -231,7 +231,6 @@ fn get_tokens_belong_to_accessor(
     let mut opened_paren = 0;
     'single_property: loop {
         while inst_index < ops.len() {
-            println!("{:?}", ops.get(inst_index));
             match ops.get(inst_index).unwrap() {
                 Op::BracketOpen => {
                     opened_paren += 1;
