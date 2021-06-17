@@ -6,12 +6,18 @@ use std::collections::HashMap;
 use std::fs;
 use std::io;
 use std::path::PathBuf;
+use std::sync::Mutex;
 
 /// HTML template rendering engine that should be constructed for once.
 pub struct Dojang {
     /// Mapping between the template file name and the renderer along with the file content.
     templates: HashMap<String, (Executer, String)>,
+
+    /// Map of the registered functions.
     functions: HashMap<String, FunctionContainer>,
+
+    /// Files read from "include". Those are cached here.
+    includes: Mutex<HashMap<String, String>>,
 }
 
 impl Dojang {
@@ -20,6 +26,7 @@ impl Dojang {
         Dojang {
             templates: HashMap::new(),
             functions: HashMap::new(),
+            includes: Mutex::new(HashMap::new()),
         }
     }
 
@@ -182,7 +189,7 @@ impl Dojang {
     /// // Add every files under ./tests as a template.
     /// dojang.load("./tests");
     /// ```
-    pub fn load(&mut self, dir_name: &str) -> Result<&Self, String> {
+    pub fn load(&mut self, dir_name: &str) -> Result<&mut Self, String> {
         match get_all_file_path_under_dir(dir_name) {
             Ok(files) => {
                 for file in files {
@@ -237,9 +244,14 @@ impl Dojang {
     /// // Render 'template_file' with the provided context.
     /// dojang.load("./tests").unwrap().render("template_file", serde_json::from_str(r#"{ "test" : { "title" : "Welcome to Dojang"} }"#).unwrap());
     /// ```
-    pub fn render(&self, file_name: &str, value: Value) -> Result<String, String> {
+    pub fn render(&mut self, file_name: &str, value: Value) -> Result<String, String> {
         if let Some((executer, file_content)) = self.templates.get(&file_name.to_string()) {
-            executer.render(&mut Context::new(value), &self.functions, file_content)
+            executer.render(
+                &mut Context::new(value),
+                &self.functions,
+                file_content,
+                &mut self.includes,
+            )
         } else {
             Err(format!("Template {} is not found", file_name))
         }

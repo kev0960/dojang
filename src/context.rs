@@ -3,6 +3,8 @@ use crate::expr::*;
 use serde_json::{Map, Value};
 use std::collections::HashMap;
 use std::fmt;
+use std::fs;
+use std::sync::Mutex;
 
 static FALSE: Value = Value::Bool(false);
 
@@ -141,7 +143,9 @@ pub trait ComputeExpr {
         &self,
         context: &mut Context,
         functions: &HashMap<String, FunctionContainer>,
+        includes: &mut Mutex<HashMap<String, String>>,
     ) -> Result<Operand, String>;
+
     fn run_for_loop(&self, context: &mut Context, for_index: usize) -> Result<bool, String>;
 }
 
@@ -150,6 +154,7 @@ impl ComputeExpr for Eval {
         &self,
         context: &mut Context,
         functions: &HashMap<String, FunctionContainer>,
+        includes: &mut Mutex<HashMap<String, String>>,
     ) -> Result<Operand, String> {
         let mut operands: Vec<Operand> = Vec::new();
 
@@ -194,6 +199,13 @@ impl ComputeExpr for Eval {
                     false => {
                         let function_to_run;
 
+                        if let Some(operand) =
+                            handle_predefined_functions(function, context, functions, includes)?
+                        {
+                            operands.push(operand);
+                            continue;
+                        }
+
                         match functions.get(&function.name) {
                             Some(f) => function_to_run = f,
                             None => {
@@ -213,7 +225,7 @@ impl ComputeExpr for Eval {
                         let mut evals = Vec::new();
 
                         for param in params {
-                            evals.push(param.run(context, functions)?);
+                            evals.push(param.run(context, functions, includes)?);
                         }
 
                         let return_value = match function_to_run {
@@ -248,7 +260,7 @@ impl ComputeExpr for Eval {
 
                         let mut obj_name = vec![function.name.clone()];
                         for param in params {
-                            obj_name.push(param.run(context, functions)?.to_str())
+                            obj_name.push(param.run(context, functions, includes)?.to_str())
                         }
 
                         operands.push(convert_value_to_operand(
@@ -326,6 +338,43 @@ impl ComputeExpr for Eval {
             _ => Ok(false),
         }
     }
+}
+
+fn handle_predefined_functions(
+    f: &Function,
+    context: &mut Context,
+    functions: &HashMap<String, FunctionContainer>,
+    includes: &mut Mutex<HashMap<String, String>>,
+) -> Result<Option<Operand>, String> {
+    if f.name == "include" {
+        if f.params.len() != 1 {
+            return Err(format!(
+                "Predefined function 'includes' must provide 1 string parameter. You gave : {:?}",
+                f
+            ));
+        }
+
+        let file_name = f
+            .params
+            .get(0)
+            .unwrap()
+            .run(context, functions, includes)?
+            .to_str();
+        if let Some(file_data) = includes.lock().unwrap().get(&file_name) {
+            return Ok(Some(Operand::Value(Value::String(file_data.clone()))));
+        } else {
+            match fs::read_to_string(&file_name) {
+                Ok(file_data) => {
+                    return Ok(Some(Operand::Value(Value::String(file_data.clone()))));
+                }
+                Err(e) => {
+                    return Err(format!("Error reading file {:?}", file_name));
+                }
+            }
+        }
+    }
+
+    return Ok(None);
 }
 
 pub trait Convert {
@@ -799,22 +848,23 @@ fn compute_and_test() {
     let context_json = r#"{"a": 1, "b":0, "c":"abc", "d":"", "e": "def"}"#;
     let context_value: Value = serde_json::from_str(context_json).unwrap();
     let mut context = Context::new(context_value);
+    let mut includes = Mutex::new(HashMap::new());
 
     {
         let eval = Eval::new(get_expr(r"<% a && b %>")).unwrap();
-        let result = eval.run(&mut context, &HashMap::new());
+        let result = eval.run(&mut context, &HashMap::new(), &mut includes);
 
         assert_eq!(result.unwrap(), Operand::Value(Value::from(false)));
     }
     {
         let eval = Eval::new(get_expr(r"<% c && d %>")).unwrap();
-        let result = eval.run(&mut context, &HashMap::new());
+        let result = eval.run(&mut context, &HashMap::new(), &mut includes);
 
         assert_eq!(result.unwrap(), Operand::Value(Value::from(false)));
     }
     {
         let eval = Eval::new(get_expr(r"<% c && e %>")).unwrap();
-        let result = eval.run(&mut context, &HashMap::new());
+        let result = eval.run(&mut context, &HashMap::new(), &mut includes);
 
         assert_eq!(result.unwrap(), Operand::Value(Value::from(true)));
     }
@@ -825,22 +875,23 @@ fn compute_or_test() {
     let context_json = r#"{"a": 1, "b":0, "c":"abc", "d":"", "e": "def"}"#;
     let context_value: Value = serde_json::from_str(context_json).unwrap();
     let mut context = Context::new(context_value);
+    let mut includes = Mutex::new(HashMap::new());
 
     {
         let eval = Eval::new(get_expr(r"<% (a && b) || (c && e) %>")).unwrap();
-        let result = eval.run(&mut context, &HashMap::new());
+        let result = eval.run(&mut context, &HashMap::new(), &mut includes);
 
         assert_eq!(result.unwrap(), Operand::Value(Value::from(true)))
     }
     {
         let eval = Eval::new(get_expr(r"<% (a && b) || (c && d) %>")).unwrap();
-        let result = eval.run(&mut context, &HashMap::new());
+        let result = eval.run(&mut context, &HashMap::new(), &mut includes);
 
         assert_eq!(result.unwrap(), Operand::Value(Value::from(false)));
     }
     {
         let eval = Eval::new(get_expr(r"<% c || e %>")).unwrap();
-        let result = eval.run(&mut context, &HashMap::new());
+        let result = eval.run(&mut context, &HashMap::new(), &mut includes);
 
         assert_eq!(result.unwrap(), Operand::Value(Value::from(true)));
     }
@@ -851,16 +902,17 @@ fn compute_complex() {
     let context_json = r#"{"a": 1, "b":0, "c":"abc", "d":"", "e": "def"}"#;
     let context_value: Value = serde_json::from_str(context_json).unwrap();
     let mut context = Context::new(context_value);
+    let mut includes = Mutex::new(HashMap::new());
 
     {
         let eval = Eval::new(get_expr(r"<% !a && ((b != a) || c <= e) %>")).unwrap();
-        let result = eval.run(&mut context, &HashMap::new());
+        let result = eval.run(&mut context, &HashMap::new(), &mut includes);
 
         assert_eq!(result.unwrap(), Operand::Value(Value::from(false)));
     }
     {
         let eval = Eval::new(get_expr(r"<% !b && ((b != a) || c <= e && !d) %>")).unwrap();
-        let result = eval.run(&mut context, &HashMap::new());
+        let result = eval.run(&mut context, &HashMap::new(), &mut includes);
 
         assert_eq!(result.unwrap(), Operand::Value(Value::from(true)));
     }
@@ -869,7 +921,7 @@ fn compute_complex() {
             r#"<% (a == 1) && (b == 0) && (c == "abc") && !d && e == "def" %>"#,
         ))
         .unwrap();
-        let result = eval.run(&mut context, &HashMap::new());
+        let result = eval.run(&mut context, &HashMap::new(), &mut includes);
 
         assert_eq!(result.unwrap(), Operand::Value(Value::from(true)));
     }
@@ -880,22 +932,23 @@ fn compute_complex_object_name() {
     let context_json = r#"{"a": {"b" : 2, "c" : {"d" : 3 }}, "b" : 1}"#;
     let context_value: Value = serde_json::from_str(context_json).unwrap();
     let mut context = Context::new(context_value);
+    let mut includes = Mutex::new(HashMap::new());
 
     {
         let eval = Eval::new(get_expr(r"<% a.b %>")).unwrap();
-        let result = eval.run(&mut context, &HashMap::new());
+        let result = eval.run(&mut context, &HashMap::new(), &mut includes);
 
         assert_eq!(result.unwrap(), Operand::Value(Value::from(2)));
     }
     {
         let eval = Eval::new(get_expr(r"<% a.c.d %>")).unwrap();
-        let result = eval.run(&mut context, &HashMap::new());
+        let result = eval.run(&mut context, &HashMap::new(), &mut includes);
 
         assert_eq!(result.unwrap(), Operand::Value(Value::from(3)));
     }
     {
         let eval = Eval::new(get_expr(r#"<% b %>"#)).unwrap();
-        let result = eval.run(&mut context, &HashMap::new());
+        let result = eval.run(&mut context, &HashMap::new(), &mut includes);
 
         assert_eq!(result.unwrap(), Operand::Value(Value::from(1)));
     }
@@ -904,12 +957,14 @@ fn compute_complex_object_name() {
 #[test]
 fn compute_assign_test() {
     let context_json = r#"{"a": 1, "b":0, "c": 1}"#;
+    let mut includes = Mutex::new(HashMap::new());
+
     {
         let context_value: Value = serde_json::from_str(context_json).unwrap();
         let mut context = Context::new(context_value);
 
         let eval = Eval::new(get_expr(r"<% a = a && b %>")).unwrap();
-        let result = eval.run(&mut context, &HashMap::new());
+        let result = eval.run(&mut context, &HashMap::new(), &mut includes);
 
         assert_eq!(result.unwrap(), Operand::Value(Value::from(false)));
         assert_eq!(context.context.get("a").unwrap().as_bool().unwrap(), false);
@@ -919,7 +974,7 @@ fn compute_assign_test() {
         let mut context = Context::new(context_value);
 
         let eval = Eval::new(get_expr(r"<% a = a && c %>")).unwrap();
-        let result = eval.run(&mut context, &HashMap::new());
+        let result = eval.run(&mut context, &HashMap::new(), &mut includes);
 
         assert_eq!(result.unwrap(), Operand::Value(Value::from(true)));
         assert_eq!(context.context.get("a").unwrap().as_bool().unwrap(), true);
@@ -929,7 +984,7 @@ fn compute_assign_test() {
         let mut context = Context::new(context_value);
 
         let eval = Eval::new(get_expr(r"<% d = a && c %>")).unwrap();
-        let result = eval.run(&mut context, &HashMap::new());
+        let result = eval.run(&mut context, &HashMap::new(), &mut includes);
 
         assert_eq!(result.unwrap(), Operand::Value(Value::from(true)));
         assert_eq!(context.context.get("d").unwrap().as_bool().unwrap(), true);
@@ -939,13 +994,15 @@ fn compute_assign_test() {
 #[test]
 fn compute_arithmetic() {
     let context_json = r#"{"a": 1, "b":2, "c": 3, "d" : 2, "e" : 6, "f" : 2}"#;
+    let mut includes = Mutex::new(HashMap::new());
+
     {
         let context_value: Value = serde_json::from_str(context_json).unwrap();
         let mut context = Context::new(context_value);
 
         // (1 + 2 * 3 - 6 / 2) * 2
         let eval = Eval::new(get_expr(r"<% b = a = (a + b * c - e / d) * f %>")).unwrap();
-        let result = eval.run(&mut context, &HashMap::new());
+        let result = eval.run(&mut context, &HashMap::new(), &mut includes);
 
         assert_eq!(result.unwrap(), Operand::Value(Value::from(8)));
         assert_eq!(context.context.get("a").unwrap().as_i64().unwrap(), 8);
@@ -956,12 +1013,14 @@ fn compute_arithmetic() {
 #[test]
 fn convert_object_to_boolean() {
     let context_json = r#"{"a": {"b" : 1}}"#;
+    let mut includes = Mutex::new(HashMap::new());
+
     {
         let context_value: Value = serde_json::from_str(context_json).unwrap();
         let mut context = Context::new(context_value);
 
         let eval = Eval::new(get_expr(r"<% !b %>")).unwrap();
-        let result = eval.run(&mut context, &HashMap::new());
+        let result = eval.run(&mut context, &HashMap::new(), &mut includes);
 
         assert_eq!(result.unwrap(), Operand::Value(Value::from(true)));
     }
@@ -971,7 +1030,7 @@ fn convert_object_to_boolean() {
         let mut context = Context::new(context_value);
 
         let eval = Eval::new(get_expr(r"<% a %>")).unwrap();
-        let result = eval.run(&mut context, &HashMap::new());
+        let result = eval.run(&mut context, &HashMap::new(), &mut includes);
 
         assert_eq!(result.unwrap(), Operand::Value(Value::from(true)));
     }
