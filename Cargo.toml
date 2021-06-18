@@ -1,6 +1,6 @@
 [package]
 name = "dojang"
-version = "0.1.4"
+version = "0.1.5"
 authors = ["Jaebum Lee <kev0960@gmail.com>"]
 edition = "2018"
 description = "Dojang, a EJS like Html Template Engine."
