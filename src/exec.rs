@@ -201,6 +201,7 @@ impl Executer {
     pub fn render(
         &self,
         context: &mut Context,
+        templates: &HashMap<String, (Executer, String)>,
         functions: &HashMap<String, FunctionContainer>,
         template: &str,
         includes: &mut Mutex<HashMap<String, String>>,
@@ -217,17 +218,18 @@ impl Executer {
                     }
                     Show::ExprEscaped(eval) => {
                         rendered.push_str(&*encode_safe(&Executer::run_eval(
-                            context, functions, &eval, includes,
+                            context, templates, functions, &eval, includes,
                         )?));
                     }
                     Show::ExprUnescaped(eval) => {
-                        rendered
-                            .push_str(&Executer::run_eval(context, functions, &eval, includes)?);
+                        rendered.push_str(&Executer::run_eval(
+                            context, templates, functions, &eval, includes,
+                        )?);
                     }
                 },
                 Action::If(eval) | Action::While(eval) => {
                     // Jump only if the condition is false. Otherwise just go to next instruction.
-                    if !eval.run(context, functions, includes)?.is_true() {
+                    if !eval.run(context, templates, functions, includes)?.is_true() {
                         if let Some(next) = self.jump_table.get(&inst_index) {
                             inst_index = *next;
                             continue;
@@ -281,7 +283,7 @@ impl Executer {
                         continue;
                     }
                     _ => {
-                        &Executer::run_eval(context, functions, &eval, includes)?;
+                        &Executer::run_eval(context, templates, functions, &eval, includes)?;
                     }
                 },
                 Action::Else() => {}
@@ -296,6 +298,7 @@ impl Executer {
     // Runs Eval if it is not empty.
     fn run_eval(
         context: &mut Context,
+        templates: &HashMap<String, (Executer, String)>,
         functions: &HashMap<String, FunctionContainer>,
         eval: &Eval,
         includes: &mut Mutex<HashMap<String, String>>,
@@ -304,7 +307,7 @@ impl Executer {
             return Ok("".to_string());
         }
 
-        Ok(eval.run(context, functions, includes)?.to_str())
+        Ok(eval.run(context, templates, functions, includes)?.to_str())
     }
 }
 
@@ -507,7 +510,13 @@ fn test_arithmetic_exec() {
         let template = r"<% b = a = (a + b * c - e / d) * f;e=a+b; if e == 16 { g = 5; h = 6} %>g=<%= g %> h=<%= h %>";
         let executer = Executer::new(Parser::parse(template).unwrap()).unwrap();
         let result = executer
-            .render(&mut context, &HashMap::new(), template, &mut includes)
+            .render(
+                &mut context,
+                &HashMap::new(),
+                &HashMap::new(),
+                template,
+                &mut includes,
+            )
             .unwrap();
 
         assert_eq!(result, "g=5 h=6".to_string());
@@ -522,7 +531,13 @@ fn test_while_exec() {
 
     let mut context = Context::new(Value::from(""));
     let result = executer
-        .render(&mut context, &HashMap::new(), template, &mut includes)
+        .render(
+            &mut context,
+            &HashMap::new(),
+            &HashMap::new(),
+            template,
+            &mut includes,
+        )
         .unwrap();
 
     assert_eq!(result, "a = 0 One a = 2 ".to_string());
@@ -539,7 +554,13 @@ fn test_for_in_statement() {
     let mut context = Context::new(context_value);
 
     let result = executer
-        .render(&mut context, &HashMap::new(), template, &mut includes)
+        .render(
+            &mut context,
+            &HashMap::new(),
+            &HashMap::new(),
+            template,
+            &mut includes,
+        )
         .unwrap();
 
     assert_eq!(result, "1 2 3 4 5 ".to_string());
@@ -557,7 +578,13 @@ fn test_nested_for_in_statement() {
     let mut context = Context::new(context_value);
 
     let result = executer
-        .render(&mut context, &HashMap::new(), template, &mut includes)
+        .render(
+            &mut context,
+            &HashMap::new(),
+            &HashMap::new(),
+            template,
+            &mut includes,
+        )
         .unwrap();
     assert_eq!(
         result,
@@ -576,7 +603,13 @@ fn test_break() {
     let mut context = Context::new(context_value);
 
     let result = executer
-        .render(&mut context, &HashMap::new(), template, &mut includes)
+        .render(
+            &mut context,
+            &HashMap::new(),
+            &HashMap::new(),
+            template,
+            &mut includes,
+        )
         .unwrap();
     assert_eq!(result, "1 2 3 ".to_string());
 }
@@ -593,7 +626,13 @@ fn test_nested_break() {
     let mut context = Context::new(context_value);
 
     let result = executer
-        .render(&mut context, &HashMap::new(), template, &mut includes)
+        .render(
+            &mut context,
+            &HashMap::new(),
+            &HashMap::new(),
+            template,
+            &mut includes,
+        )
         .unwrap();
     assert_eq!(result, "1 2 3 4 5 2 4 6 8 10 3 6 9 4 8 5 10 ".to_string());
 }
@@ -609,7 +648,13 @@ fn test_continue() {
     let mut context = Context::new(context_value);
 
     let result = executer
-        .render(&mut context, &HashMap::new(), template, &mut includes)
+        .render(
+            &mut context,
+            &HashMap::new(),
+            &HashMap::new(),
+            template,
+            &mut includes,
+        )
         .unwrap();
     assert_eq!(result, "1 2 4 5 ".to_string());
 }
@@ -625,7 +670,13 @@ fn test_nested_continue() {
     let mut context = Context::new(context_value);
 
     let result = executer
-        .render(&mut context, &HashMap::new(), template, &mut includes)
+        .render(
+            &mut context,
+            &HashMap::new(),
+            &HashMap::new(),
+            template,
+            &mut includes,
+        )
         .unwrap();
     assert_eq!(result, "23451345124512351234".to_string());
 }
@@ -659,7 +710,13 @@ fn test_function() {
     );
 
     let result = executer
-        .render(&mut context, &functions, template, &mut includes)
+        .render(
+            &mut context,
+            &HashMap::new(),
+            &functions,
+            template,
+            &mut includes,
+        )
         .unwrap();
     assert_eq!(result, "30".to_string());
 }
@@ -716,7 +773,13 @@ fn test_function_complex() {
     );
 
     let result = executer
-        .render(&mut context, &functions, template, &mut includes)
+        .render(
+            &mut context,
+            &HashMap::new(),
+            &functions,
+            template,
+            &mut includes,
+        )
         .unwrap();
     assert_eq!(result, "428".to_string());
 }
@@ -751,7 +814,13 @@ fn test_function_with_statements() {
     );
 
     let result = executer
-        .render(&mut context, &functions, template, &mut includes)
+        .render(
+            &mut context,
+            &HashMap::new(),
+            &functions,
+            template,
+            &mut includes,
+        )
         .unwrap();
     assert_eq!(result, "(2, 2) (3, 3) (4, 4) (5, 5) ".to_string());
 }
@@ -768,10 +837,52 @@ fn test_predefined_include_function() {
 
     let functions = HashMap::new();
     let result = executer
-        .render(&mut context, &functions, template, &mut includes)
+        .render(
+            &mut context,
+            &HashMap::new(),
+            &functions,
+            template,
+            &mut includes,
+        )
         .unwrap();
 
     assert_eq!(result, "<html>test include</html>\n".to_string());
+}
+
+#[test]
+fn test_predefined_include_template_function() {
+    let template = r#"<%- include_template(a) %>"#;
+    let mut includes = Mutex::new(HashMap::new());
+    let executer = Executer::new(Parser::parse(template).unwrap()).unwrap();
+
+    let context_json = r#"{"a" : "some_template", "title" : "TITLE"}"#;
+    let context_value: Value = serde_json::from_str(context_json).unwrap();
+    let mut context = Context::new(context_value);
+
+    let functions = HashMap::new();
+    let mut templates = HashMap::new();
+
+    // Register "some_template". This will be loaded from include_template function.
+    let some_template = "<html><%= title %></html>".to_string();
+    templates.insert(
+        "some_template".to_string(),
+        (
+            Executer::new(Parser::parse(&some_template).unwrap()).unwrap(),
+            some_template,
+        ),
+    );
+
+    let result = executer
+        .render(
+            &mut context,
+            &templates,
+            &functions,
+            template,
+            &mut includes,
+        )
+        .unwrap();
+
+    assert_eq!(result, "<html>TITLE</html>".to_string());
 }
 
 #[test]
@@ -785,7 +896,13 @@ fn test_accessor() {
     let mut context = Context::new(context_value);
 
     let result = executer
-        .render(&mut context, &HashMap::new(), template, &mut includes)
+        .render(
+            &mut context,
+            &HashMap::new(),
+            &HashMap::new(),
+            template,
+            &mut includes,
+        )
         .unwrap();
     assert_eq!(result, "11231".to_string());
 }
@@ -833,7 +950,13 @@ fn test_accessor_and_function() {
     );
 
     let result = executer
-        .render(&mut context, &functions, template, &mut includes)
+        .render(
+            &mut context,
+            &HashMap::new(),
+            &functions,
+            template,
+            &mut includes,
+        )
         .unwrap();
     assert_eq!(result, "1234".to_string());
 }
@@ -849,7 +972,13 @@ fn test_accessor_with_dot() {
     let mut context = Context::new(context_value);
 
     let result = executer
-        .render(&mut context, &HashMap::new(), template, &mut includes)
+        .render(
+            &mut context,
+            &HashMap::new(),
+            &HashMap::new(),
+            template,
+            &mut includes,
+        )
         .unwrap();
     assert_eq!(result, "11231".to_string());
 }

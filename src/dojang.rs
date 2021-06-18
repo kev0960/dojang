@@ -248,6 +248,7 @@ impl Dojang {
         if let Some((executer, file_content)) = self.templates.get(&file_name.to_string()) {
             executer.render(
                 &mut Context::new(value),
+                &self.templates,
                 &self.functions,
                 file_content,
                 &mut self.includes,

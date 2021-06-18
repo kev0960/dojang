@@ -1,4 +1,5 @@
 use crate::eval::*;
+use crate::exec::*;
 use crate::expr::*;
 use serde_json::{Map, Value};
 use std::collections::HashMap;
@@ -142,6 +143,7 @@ pub trait ComputeExpr {
     fn run(
         &self,
         context: &mut Context,
+        templates: &HashMap<String, (Executer, String)>,
         functions: &HashMap<String, FunctionContainer>,
         includes: &mut Mutex<HashMap<String, String>>,
     ) -> Result<Operand, String>;
@@ -153,6 +155,7 @@ impl ComputeExpr for Eval {
     fn run(
         &self,
         context: &mut Context,
+        templates: &HashMap<String, (Executer, String)>,
         functions: &HashMap<String, FunctionContainer>,
         includes: &mut Mutex<HashMap<String, String>>,
     ) -> Result<Operand, String> {
@@ -199,9 +202,9 @@ impl ComputeExpr for Eval {
                     false => {
                         let function_to_run;
 
-                        if let Some(operand) =
-                            handle_predefined_functions(function, context, functions, includes)?
-                        {
+                        if let Some(operand) = handle_predefined_functions(
+                            function, context, templates, functions, includes,
+                        )? {
                             operands.push(operand);
                             continue;
                         }
@@ -225,7 +228,7 @@ impl ComputeExpr for Eval {
                         let mut evals = Vec::new();
 
                         for param in params {
-                            evals.push(param.run(context, functions, includes)?);
+                            evals.push(param.run(context, templates, functions, includes)?);
                         }
 
                         let return_value = match function_to_run {
@@ -260,7 +263,8 @@ impl ComputeExpr for Eval {
 
                         let mut obj_name = vec![function.name.clone()];
                         for param in params {
-                            obj_name.push(param.run(context, functions, includes)?.to_str())
+                            obj_name
+                                .push(param.run(context, templates, functions, includes)?.to_str())
                         }
 
                         operands.push(convert_value_to_operand(
@@ -343,6 +347,7 @@ impl ComputeExpr for Eval {
 fn handle_predefined_functions(
     f: &Function,
     context: &mut Context,
+    templates: &HashMap<String, (Executer, String)>,
     functions: &HashMap<String, FunctionContainer>,
     includes: &mut Mutex<HashMap<String, String>>,
 ) -> Result<Option<Operand>, String> {
@@ -358,7 +363,7 @@ fn handle_predefined_functions(
             .params
             .get(0)
             .unwrap()
-            .run(context, functions, includes)?
+            .run(context, templates, functions, includes)?
             .to_str();
         if let Some(file_data) = includes.lock().unwrap().get(&file_name) {
             return Ok(Some(Operand::Value(Value::String(file_data.clone()))));
@@ -367,10 +372,32 @@ fn handle_predefined_functions(
                 Ok(file_data) => {
                     return Ok(Some(Operand::Value(Value::String(file_data.clone()))));
                 }
-                Err(e) => {
+                Err(_) => {
                     return Err(format!("Error reading file {:?}", file_name));
                 }
             }
+        }
+    } else if f.name == "include_template" {
+        if f.params.len() != 1 {
+            return Err(format!(
+                "Predefined function 'includes' must provide 1 string parameter. You gave : {:?}",
+                f
+            ));
+        }
+
+        let file_name = f
+            .params
+            .get(0)
+            .unwrap()
+            .run(context, templates, functions, includes)?
+            .to_str();
+
+        if let Some((executer, template)) = templates.get(&file_name) {
+            return Ok(Some(Operand::Value(Value::String(
+                executer.render(context, templates, functions, template, includes)?,
+            ))));
+        } else {
+            return Err(format!("Predefined function 'include_template' must only use the pre-registered template. You gave : {}", file_name));
         }
     }
 
@@ -852,19 +879,34 @@ fn compute_and_test() {
 
     {
         let eval = Eval::new(get_expr(r"<% a && b %>")).unwrap();
-        let result = eval.run(&mut context, &HashMap::new(), &mut includes);
+        let result = eval.run(
+            &mut context,
+            &HashMap::new(),
+            &HashMap::new(),
+            &mut includes,
+        );
 
         assert_eq!(result.unwrap(), Operand::Value(Value::from(false)));
     }
     {
         let eval = Eval::new(get_expr(r"<% c && d %>")).unwrap();
-        let result = eval.run(&mut context, &HashMap::new(), &mut includes);
+        let result = eval.run(
+            &mut context,
+            &HashMap::new(),
+            &HashMap::new(),
+            &mut includes,
+        );
 
         assert_eq!(result.unwrap(), Operand::Value(Value::from(false)));
     }
     {
         let eval = Eval::new(get_expr(r"<% c && e %>")).unwrap();
-        let result = eval.run(&mut context, &HashMap::new(), &mut includes);
+        let result = eval.run(
+            &mut context,
+            &HashMap::new(),
+            &HashMap::new(),
+            &mut includes,
+        );
 
         assert_eq!(result.unwrap(), Operand::Value(Value::from(true)));
     }
@@ -879,19 +921,34 @@ fn compute_or_test() {
 
     {
         let eval = Eval::new(get_expr(r"<% (a && b) || (c && e) %>")).unwrap();
-        let result = eval.run(&mut context, &HashMap::new(), &mut includes);
+        let result = eval.run(
+            &mut context,
+            &HashMap::new(),
+            &HashMap::new(),
+            &mut includes,
+        );
 
         assert_eq!(result.unwrap(), Operand::Value(Value::from(true)))
     }
     {
         let eval = Eval::new(get_expr(r"<% (a && b) || (c && d) %>")).unwrap();
-        let result = eval.run(&mut context, &HashMap::new(), &mut includes);
+        let result = eval.run(
+            &mut context,
+            &HashMap::new(),
+            &HashMap::new(),
+            &mut includes,
+        );
 
         assert_eq!(result.unwrap(), Operand::Value(Value::from(false)));
     }
     {
         let eval = Eval::new(get_expr(r"<% c || e %>")).unwrap();
-        let result = eval.run(&mut context, &HashMap::new(), &mut includes);
+        let result = eval.run(
+            &mut context,
+            &HashMap::new(),
+            &HashMap::new(),
+            &mut includes,
+        );
 
         assert_eq!(result.unwrap(), Operand::Value(Value::from(true)));
     }
@@ -906,13 +963,23 @@ fn compute_complex() {
 
     {
         let eval = Eval::new(get_expr(r"<% !a && ((b != a) || c <= e) %>")).unwrap();
-        let result = eval.run(&mut context, &HashMap::new(), &mut includes);
+        let result = eval.run(
+            &mut context,
+            &HashMap::new(),
+            &HashMap::new(),
+            &mut includes,
+        );
 
         assert_eq!(result.unwrap(), Operand::Value(Value::from(false)));
     }
     {
         let eval = Eval::new(get_expr(r"<% !b && ((b != a) || c <= e && !d) %>")).unwrap();
-        let result = eval.run(&mut context, &HashMap::new(), &mut includes);
+        let result = eval.run(
+            &mut context,
+            &HashMap::new(),
+            &HashMap::new(),
+            &mut includes,
+        );
 
         assert_eq!(result.unwrap(), Operand::Value(Value::from(true)));
     }
@@ -921,7 +988,12 @@ fn compute_complex() {
             r#"<% (a == 1) && (b == 0) && (c == "abc") && !d && e == "def" %>"#,
         ))
         .unwrap();
-        let result = eval.run(&mut context, &HashMap::new(), &mut includes);
+        let result = eval.run(
+            &mut context,
+            &HashMap::new(),
+            &HashMap::new(),
+            &mut includes,
+        );
 
         assert_eq!(result.unwrap(), Operand::Value(Value::from(true)));
     }
@@ -936,19 +1008,34 @@ fn compute_complex_object_name() {
 
     {
         let eval = Eval::new(get_expr(r"<% a.b %>")).unwrap();
-        let result = eval.run(&mut context, &HashMap::new(), &mut includes);
+        let result = eval.run(
+            &mut context,
+            &HashMap::new(),
+            &HashMap::new(),
+            &mut includes,
+        );
 
         assert_eq!(result.unwrap(), Operand::Value(Value::from(2)));
     }
     {
         let eval = Eval::new(get_expr(r"<% a.c.d %>")).unwrap();
-        let result = eval.run(&mut context, &HashMap::new(), &mut includes);
+        let result = eval.run(
+            &mut context,
+            &HashMap::new(),
+            &HashMap::new(),
+            &mut includes,
+        );
 
         assert_eq!(result.unwrap(), Operand::Value(Value::from(3)));
     }
     {
         let eval = Eval::new(get_expr(r#"<% b %>"#)).unwrap();
-        let result = eval.run(&mut context, &HashMap::new(), &mut includes);
+        let result = eval.run(
+            &mut context,
+            &HashMap::new(),
+            &HashMap::new(),
+            &mut includes,
+        );
 
         assert_eq!(result.unwrap(), Operand::Value(Value::from(1)));
     }
@@ -964,7 +1051,12 @@ fn compute_assign_test() {
         let mut context = Context::new(context_value);
 
         let eval = Eval::new(get_expr(r"<% a = a && b %>")).unwrap();
-        let result = eval.run(&mut context, &HashMap::new(), &mut includes);
+        let result = eval.run(
+            &mut context,
+            &HashMap::new(),
+            &HashMap::new(),
+            &mut includes,
+        );
 
         assert_eq!(result.unwrap(), Operand::Value(Value::from(false)));
         assert_eq!(context.context.get("a").unwrap().as_bool().unwrap(), false);
@@ -974,7 +1066,12 @@ fn compute_assign_test() {
         let mut context = Context::new(context_value);
 
         let eval = Eval::new(get_expr(r"<% a = a && c %>")).unwrap();
-        let result = eval.run(&mut context, &HashMap::new(), &mut includes);
+        let result = eval.run(
+            &mut context,
+            &HashMap::new(),
+            &HashMap::new(),
+            &mut includes,
+        );
 
         assert_eq!(result.unwrap(), Operand::Value(Value::from(true)));
         assert_eq!(context.context.get("a").unwrap().as_bool().unwrap(), true);
@@ -984,7 +1081,12 @@ fn compute_assign_test() {
         let mut context = Context::new(context_value);
 
         let eval = Eval::new(get_expr(r"<% d = a && c %>")).unwrap();
-        let result = eval.run(&mut context, &HashMap::new(), &mut includes);
+        let result = eval.run(
+            &mut context,
+            &HashMap::new(),
+            &HashMap::new(),
+            &mut includes,
+        );
 
         assert_eq!(result.unwrap(), Operand::Value(Value::from(true)));
         assert_eq!(context.context.get("d").unwrap().as_bool().unwrap(), true);
@@ -1002,7 +1104,12 @@ fn compute_arithmetic() {
 
         // (1 + 2 * 3 - 6 / 2) * 2
         let eval = Eval::new(get_expr(r"<% b = a = (a + b * c - e / d) * f %>")).unwrap();
-        let result = eval.run(&mut context, &HashMap::new(), &mut includes);
+        let result = eval.run(
+            &mut context,
+            &HashMap::new(),
+            &HashMap::new(),
+            &mut includes,
+        );
 
         assert_eq!(result.unwrap(), Operand::Value(Value::from(8)));
         assert_eq!(context.context.get("a").unwrap().as_i64().unwrap(), 8);
@@ -1020,7 +1127,12 @@ fn convert_object_to_boolean() {
         let mut context = Context::new(context_value);
 
         let eval = Eval::new(get_expr(r"<% !b %>")).unwrap();
-        let result = eval.run(&mut context, &HashMap::new(), &mut includes);
+        let result = eval.run(
+            &mut context,
+            &HashMap::new(),
+            &HashMap::new(),
+            &mut includes,
+        );
 
         assert_eq!(result.unwrap(), Operand::Value(Value::from(true)));
     }
@@ -1030,7 +1142,12 @@ fn convert_object_to_boolean() {
         let mut context = Context::new(context_value);
 
         let eval = Eval::new(get_expr(r"<% a %>")).unwrap();
-        let result = eval.run(&mut context, &HashMap::new(), &mut includes);
+        let result = eval.run(
+            &mut context,
+            &HashMap::new(),
+            &HashMap::new(),
+            &mut includes,
+        );
 
         assert_eq!(result.unwrap(), Operand::Value(Value::from(true)));
     }
