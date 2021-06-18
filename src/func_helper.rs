@@ -70,3 +70,19 @@ impl From<String> for Operand {
         Operand::Value(Value::from(s))
     }
 }
+
+impl From<Operand> for Value {
+    fn from(op: Operand) -> Self {
+        if let Operand::Value(val) = op {
+            val
+        } else {
+            Value::Bool(false)
+        }
+    }
+}
+
+impl From<Value> for Operand {
+    fn from(val: Value) -> Self {
+        Operand::Value(val)
+    }
+}

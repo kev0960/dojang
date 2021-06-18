@@ -3,7 +3,7 @@ use crate::eval::*;
 use crate::expr::*;
 use html_escape::encode_safe;
 #[cfg(test)]
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Mutex;
 
@@ -823,6 +823,41 @@ fn test_function_with_statements() {
         )
         .unwrap();
     assert_eq!(result, "(2, 2) (3, 3) (4, 4) (5, 5) ".to_string());
+}
+
+#[test]
+fn test_function_taking_object() {
+    let template = r#"<%- func(a) %>"#;
+    let mut includes = Mutex::new(HashMap::new());
+    let executer = Executer::new(Parser::parse(template).unwrap()).unwrap();
+
+    let context_value: Value = json!({"a" : {"b" : 1, "c" : 2}});
+    let mut context = Context::new(context_value);
+
+    let mut functions = HashMap::new();
+    functions.insert(
+        "func".to_string(),
+        FunctionContainer::F1(Box::new(|a: Operand| -> Operand {
+            let a = match a {
+                Operand::Value(v) => v,
+                _ => panic!(""),
+            };
+
+            Operand::Value(Value::String(a.to_string()))
+        })),
+    );
+
+    let result = executer
+        .render(
+            &mut context,
+            &HashMap::new(),
+            &functions,
+            template,
+            &mut includes,
+        )
+        .unwrap();
+
+    assert_eq!(result, r#"{"b":1,"c":2}"#.to_string());
 }
 
 #[test]

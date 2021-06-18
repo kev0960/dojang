@@ -484,9 +484,7 @@ impl ComputeOp for Op {
 
 fn convert_value_to_operand(value: Value) -> Operand {
     match value {
-        // Any value object evaluates to true. This happens when like if (a) {} where a is an
-        // object that exist.
-        Value::Object(_) => Operand::Value(Value::from(true)),
+        Value::Object(obj) => Operand::Value(Value::Object(obj)),
         Value::Array(arr) => {
             let mut vec = Vec::new();
             for elem in arr {
@@ -1141,7 +1139,7 @@ fn convert_object_to_boolean() {
         let context_value: Value = serde_json::from_str(context_json).unwrap();
         let mut context = Context::new(context_value);
 
-        let eval = Eval::new(get_expr(r"<% a %>")).unwrap();
+        let eval = Eval::new(get_expr(r"<% a || !a %>")).unwrap();
         let result = eval.run(
             &mut context,
             &HashMap::new(),
