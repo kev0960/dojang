@@ -209,6 +209,9 @@ impl Executer {
         let mut rendered = String::new();
         let mut for_index_counter = HashMap::new();
 
+        // Contains the range value of the for-loop.
+        let mut for_range_container = HashMap::new();
+
         let mut inst_index = 0;
         while inst_index < self.insts.len() {
             match self.insts.get(inst_index).unwrap() {
@@ -247,8 +250,18 @@ impl Executer {
                         None => 0usize,
                     };
 
+                    // The for loop is first encountered. Compute the "range" part.
+                    if iter_index == 0 {
+                        for_range_container.insert(
+                            inst_index,
+                            eval.run_for_range(context, templates, functions, includes)?,
+                        );
+                    }
+
                     for_index_counter.insert(inst_index, iter_index + 1);
-                    if !eval.run_for_loop(context, iter_index)? {
+
+                    let range = for_range_container.get(&inst_index).unwrap();
+                    if !eval.run_for_loop(context, range, iter_index)? {
                         if let Some(next) = self.jump_table.get(&inst_index) {
                             // Reset the index counter.
                             for_index_counter.insert(inst_index, 0);

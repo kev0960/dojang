@@ -1,6 +1,6 @@
 use serde_json::Value;
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum Op {
     Not,          // !
     Or,           // ||
@@ -473,6 +473,47 @@ pub fn operator_num_operands(op: &Op) -> usize {
         Op::Not => 1,
         _ => 2,
     }
+}
+
+pub fn get_nth_element_from_operand(operand: &Operand, index: usize) -> Option<Value> {
+    match operand {
+        Operand::Value(value) => {
+            if value.is_array() {
+                let arr = value.as_array().unwrap();
+                if index >= arr.len() {
+                    return None;
+                }
+
+                return Some(arr.get(index).unwrap().clone());
+            } else if value.is_string() {
+                let s = value.as_str().unwrap();
+                if index >= s.len() {
+                    return None;
+                }
+
+                return Some(Value::from(s.chars().nth(index).unwrap().to_string()));
+            }
+
+            return None;
+        }
+        Operand::Array(arr) => {
+            if index >= arr.len() {
+                return None;
+            }
+
+            match arr.get(index).unwrap() {
+                Operand::Value(value) => {
+                    return Some(value.clone());
+                }
+                _ => {
+                    return None;
+                }
+            }
+        }
+        _ => {}
+    }
+
+    None
 }
 
 #[test]

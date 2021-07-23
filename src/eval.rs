@@ -3,18 +3,18 @@ use serde_json::Value;
 use std::collections::HashMap;
 
 // Evaluate the parsed expression.
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct Eval {
     pub expr: Vec<Expr>,
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum Expr {
     Op(Op),
     Function(Function),
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct Function {
     pub name: String,
     pub params: Vec<Eval>,

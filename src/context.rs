@@ -78,22 +78,6 @@ impl Context {
         Ok(value)
     }
 
-    fn get_nth_from_array(&self, name: &Vec<&str>, index: usize) -> Result<Option<Value>, String> {
-        let value = self.get_value(name)?;
-        match value {
-            Value::Array(arr) => match arr.get(index) {
-                Some(elem) => Ok(Some(elem.clone())),
-                None => Ok(None),
-            },
-            _ => {
-                return Err(format!(
-                    "in only works on the array; You gave : {:?}",
-                    value
-                ))
-            }
-        }
-    }
-
     fn set_value(&mut self, names: &Vec<&str>, provided: &Value) -> Result<(), String> {
         if names.is_empty() {
             return Err(format!("Mapping not exist : {:?}", names));
@@ -148,7 +132,20 @@ pub trait ComputeExpr {
         includes: &mut Mutex<HashMap<String, String>>,
     ) -> Result<Operand, String>;
 
-    fn run_for_loop(&self, context: &mut Context, for_index: usize) -> Result<bool, String>;
+    fn run_for_range(
+        &self,
+        context: &mut Context,
+        templates: &HashMap<String, (Executer, String)>,
+        functions: &HashMap<String, FunctionContainer>,
+        includes: &mut Mutex<HashMap<String, String>>,
+    ) -> Result<Operand, String>;
+
+    fn run_for_loop(
+        &self,
+        context: &mut Context,
+        range: &Operand,
+        for_index: usize,
+    ) -> Result<bool, String>;
 }
 
 impl ComputeExpr for Eval {
@@ -292,8 +289,51 @@ impl ComputeExpr for Eval {
         }
     }
 
+    fn run_for_range(
+        &self,
+        context: &mut Context,
+        templates: &HashMap<String, (Executer, String)>,
+        functions: &HashMap<String, FunctionContainer>,
+        includes: &mut Mutex<HashMap<String, String>>,
+    ) -> Result<Operand, String> {
+        if self.expr.len() != 3 {
+            return Err(format!(
+                "For loop must use 'for a in b' format, yours use {:?}",
+                self.expr
+            ));
+        }
+
+        match self.expr.get(0).unwrap() {
+            Expr::Op(Op::Operand(Operand::Object(_))) => {}
+            _ => {
+                return Err(format!(
+                    "Range declaration in for loop must be an object; Yours : {:?}",
+                    self.expr
+                ))
+            }
+        }
+
+        if self.expr.get(1).unwrap() != &Expr::Op(Op::Operand(Operand::Keyword(Keyword::In))) {
+            return Err(format!(
+                "'in' is missing in your for-loop. Yours : {:?}",
+                self.expr
+            ));
+        }
+
+        let range = Eval {
+            expr: vec![self.expr.get(2).unwrap().clone()],
+        };
+
+        range.run(context, templates, functions, includes)
+    }
+
     // Returns true if the for loop's condition is true.
-    fn run_for_loop(&self, context: &mut Context, for_index: usize) -> Result<bool, String> {
+    fn run_for_loop(
+        &self,
+        context: &mut Context,
+        range: &Operand,
+        for_index: usize,
+    ) -> Result<bool, String> {
         if self.expr.len() != 3 {
             return Err(format!(
                 "For loop must use 'for a in b' format, yours use {:?}",
@@ -314,28 +354,9 @@ impl ComputeExpr for Eval {
             }
         }
 
-        if self.expr.get(1).unwrap() != &Expr::Op(Op::Operand(Operand::Keyword(Keyword::In))) {
-            return Err(format!(
-                "'in' is missing in your for-loop. Yours : {:?}",
-                self.expr
-            ));
-        }
-
-        let container_name;
-        match self.expr.get(2).unwrap() {
-            Expr::Op(Op::Operand(Operand::Object(object))) => {
-                container_name = &object.name;
-            }
-            _ => {
-                return Err(format!(
-                    "Container in for loop must be an object; Yours : {:?}",
-                    self.expr
-                ))
-            }
-        }
-
-        match context.get_nth_from_array(&container_name.split(".").collect(), for_index)? {
+        match get_nth_element_from_operand(range, for_index) {
             Some(element) => {
+                println!("Elem : {:?}", element);
                 context.set_value(&object_name.split(".").collect(), &element)?;
                 Ok(true)
             }

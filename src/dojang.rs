@@ -1,4 +1,5 @@
 use crate::context::*;
+use crate::default_functions::{val_length, val_range};
 use crate::exec::*;
 use crate::expr::*;
 use serde_json::Value;
@@ -23,9 +24,20 @@ pub struct Dojang {
 impl Dojang {
     /// Creates a template engine.
     pub fn new() -> Self {
+        let mut functions = HashMap::<String, FunctionContainer>::new();
+        functions.insert(
+            "length".to_string(),
+            FunctionContainer::F1(Box::new(val_length)),
+        );
+
+        functions.insert(
+            "range".to_string(),
+            FunctionContainer::F1(Box::new(val_range)),
+        );
+
         Dojang {
             templates: HashMap::new(),
-            functions: HashMap::new(),
+            functions,
             includes: Mutex::new(HashMap::new()),
         }
     }
@@ -396,5 +408,33 @@ fn render_function() {
             .render("some_template", serde_json::json!({"a" : 1, "b" : 2 }))
             .unwrap(),
         "func(a,b) = 3"
+    );
+}
+
+#[test]
+fn for_use_range_function() {
+    let template = r#"<% for i in range(v) { %><%= i %><% } %>"#.to_string();
+    let mut dojang = Dojang::new();
+    assert!(dojang.add("some_template".to_string(), template).is_ok());
+
+    assert_eq!(
+        dojang
+            .render("some_template", serde_json::json!({"v" : 10}))
+            .unwrap(),
+        "0123456789"
+    );
+}
+
+#[test]
+fn use_length_function() {
+    let template = r#"<%= length(s) %>"#.to_string();
+    let mut dojang = Dojang::new();
+    assert!(dojang.add("some_template".to_string(), template).is_ok());
+
+    assert_eq!(
+        dojang
+            .render("some_template", serde_json::json!({"s" : "abc"}))
+            .unwrap(),
+        "3"
     );
 }

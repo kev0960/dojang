@@ -111,6 +111,7 @@
 //! ```
 //!
 mod context;
+mod default_functions;
 pub mod dojang;
 mod eval;
 mod exec;
