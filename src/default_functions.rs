@@ -1,4 +1,4 @@
-use crate::expr::Operand;
+use crate::expr::{convert_operand_to_value, Operand};
 use serde_json::Value;
 
 pub fn val_length(op: Operand) -> Operand {
@@ -32,4 +32,10 @@ pub fn val_range(op: Operand) -> Operand {
     }
 
     return Operand::Value(Value::from(Vec::<i64>::new()));
+}
+
+pub fn val_stringify(op: Operand) -> Operand {
+    Operand::Value(Value::from(
+        serde_json::to_string(&convert_operand_to_value(op)).unwrap(),
+    ))
 }

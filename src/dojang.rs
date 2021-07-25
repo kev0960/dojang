@@ -1,5 +1,5 @@
 use crate::context::*;
-use crate::default_functions::{val_length, val_range};
+use crate::default_functions::{val_length, val_range, val_stringify};
 use crate::exec::*;
 use crate::expr::*;
 use serde_json::Value;
@@ -33,6 +33,11 @@ impl Dojang {
         functions.insert(
             "range".to_string(),
             FunctionContainer::F1(Box::new(val_range)),
+        );
+
+        functions.insert(
+            "json_stringify".to_string(),
+            FunctionContainer::F1(Box::new(val_stringify)),
         );
 
         Dojang {
@@ -436,5 +441,19 @@ fn use_length_function() {
             .render("some_template", serde_json::json!({"s" : "abc"}))
             .unwrap(),
         "3"
+    );
+}
+
+#[test]
+fn use_json_stringify_function() {
+    let template = r#"<%- json_stringify(s) %>"#.to_string();
+    let mut dojang = Dojang::new();
+    assert!(dojang.add("some_template".to_string(), template).is_ok());
+
+    assert_eq!(
+        dojang
+            .render("some_template", serde_json::json!({"s" : [1,2,3]}))
+            .unwrap(),
+        "[1,2,3]"
     );
 }

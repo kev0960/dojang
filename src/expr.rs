@@ -193,7 +193,7 @@ impl Parser {
             let current_char = template.chars().nth(current).unwrap();
 
             // Check string literal.
-            if current_char == '"' {
+            if current_char == '"' || current_char == '\'' {
                 match Parser::handle_string_literal(template, current, parse_tree) {
                     Ok(end_of_literal) => {
                         current = end_of_literal;
@@ -282,13 +282,14 @@ impl Parser {
         start: usize,
         parse_tree: &mut Vec<Action<Tokens>>,
     ) -> Result<usize, String> {
-        assert!(template.chars().nth(start).unwrap() == '"');
+        let starting_quote = template.chars().nth(start).unwrap();
+        assert!(starting_quote == '"' || starting_quote == '\'');
         let string_literal_end;
 
         // Read until closing " is found.
         let mut find_end_quote_start = start + 1;
         loop {
-            match template[find_end_quote_start..].find('"') {
+            match template[find_end_quote_start..].find(starting_quote) {
                 Some(end_quote_pos) => {
                     if end_quote_pos == 0
                         || template[find_end_quote_start..]
@@ -305,8 +306,8 @@ impl Parser {
                 }
                 _ => {
                     return Err(format!(
-                        "template '{}' does not have terminated \" for string.",
-                        template
+                        "template '{}' does not have terminated {} for string.",
+                        template, starting_quote
                     ))
                 }
             }
@@ -516,6 +517,36 @@ pub fn get_nth_element_from_operand(operand: &Operand, index: usize) -> Option<V
     None
 }
 
+pub fn convert_value_to_operand(value: Value) -> Operand {
+    match value {
+        Value::Object(obj) => Operand::Value(Value::Object(obj)),
+        Value::Array(arr) => {
+            let mut vec = Vec::new();
+            for elem in arr {
+                vec.push(Operand::Value(elem));
+            }
+            Operand::Array(vec)
+        }
+        v => Operand::Value(v),
+    }
+}
+
+pub fn convert_operand_to_value(operand: Operand) -> Value {
+    match operand {
+        Operand::Value(v) => v,
+        Operand::Array(arr) => {
+            let mut vec = Vec::new();
+            for elem in arr {
+                vec.push(convert_operand_to_value(elem));
+            }
+            Value::from(vec)
+        }
+        _ => {
+            panic!("Unable to convert object to value.")
+        }
+    }
+}
+
 #[test]
 fn parse_simple_expr_with_binary() {
     let result = Parser::parse("<% some == 3 %>");
@@ -609,6 +640,23 @@ fn parse_simple_literal() {
     assert_eq!(result.unwrap(), expected_expr);
 }
 
+#[test]
+fn parse_simple_literal_single_quote() {
+    let result = Parser::parse(r#"<% some_value == 'a"bc' %>"#);
+    let expected_expr = Parser {
+        parse_tree: vec![Action::Do(Tokens {
+            ops: vec![
+                Op::Operand(Operand::Object(Object {
+                    name: "some_value".to_string(),
+                })),
+                Op::Equal,
+                Op::Operand(Operand::Value(Value::from("a\"bc".to_string()))),
+            ],
+        })],
+    };
+
+    assert_eq!(result.unwrap(), expected_expr);
+}
 #[test]
 fn parse_literal_with_escape() {
     let result = Parser::parse(r#"<% some_value == "a\"bc" abc %>"#);

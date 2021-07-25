@@ -67,11 +67,25 @@ impl Context {
         }
 
         for n in names.iter().skip(1) {
-            match value.get(n) {
-                Some(v) => {
-                    value = v;
+            if value.is_array() {
+                match n.parse::<usize>() {
+                    Ok(index) => {
+                        value = value.as_array().unwrap().get(index).unwrap();
+                    }
+                    _ => {
+                        return Err(format!(
+                            "Specified non-number parameter for an array : {:?}, index : {:?}",
+                            value, n
+                        ));
+                    }
                 }
-                _ => return Ok(&FALSE),
+            } else {
+                match value.get(n) {
+                    Some(v) => {
+                        value = v;
+                    }
+                    _ => return Ok(&FALSE),
+                }
             }
         }
 
@@ -356,7 +370,6 @@ impl ComputeExpr for Eval {
 
         match get_nth_element_from_operand(range, for_index) {
             Some(element) => {
-                println!("Elem : {:?}", element);
                 context.set_value(&object_name.split(".").collect(), &element)?;
                 Ok(true)
             }
@@ -500,36 +513,6 @@ impl ComputeOp for Op {
         }
 
         panic!("Unary {:?} is not implemented", self);
-    }
-}
-
-fn convert_value_to_operand(value: Value) -> Operand {
-    match value {
-        Value::Object(obj) => Operand::Value(Value::Object(obj)),
-        Value::Array(arr) => {
-            let mut vec = Vec::new();
-            for elem in arr {
-                vec.push(Operand::Value(elem));
-            }
-            Operand::Array(vec)
-        }
-        v => Operand::Value(v),
-    }
-}
-
-fn convert_operand_to_value(operand: Operand) -> Value {
-    match operand {
-        Operand::Value(v) => v,
-        Operand::Array(arr) => {
-            let mut vec = Vec::new();
-            for elem in arr {
-                vec.push(convert_operand_to_value(elem));
-            }
-            Value::from(vec)
-        }
-        _ => {
-            panic!("Unable to convert object to value.")
-        }
     }
 }
 
@@ -696,7 +679,10 @@ fn compute_greater(left: &Value, right: &Value) -> Result<Value, String> {
         _ => {}
     };
 
-    Err(format!("Invalid operation between {:?} {:?}", left, right))
+    Err(format!(
+        "Invalid operation '>' between {:?} {:?}",
+        left, right
+    ))
 }
 
 fn compute_greater_eq(left: &Value, right: &Value) -> Result<Value, String> {
@@ -718,7 +704,10 @@ fn compute_greater_eq(left: &Value, right: &Value) -> Result<Value, String> {
         _ => {}
     };
 
-    Err(format!("Invalid operation between {:?} {:?}", left, right))
+    Err(format!(
+        "Invalid operation '>=' between {:?} {:?}",
+        left, right
+    ))
 }
 
 fn compute_less(left: &Value, right: &Value) -> Result<Value, String> {
@@ -740,7 +729,10 @@ fn compute_less(left: &Value, right: &Value) -> Result<Value, String> {
         _ => {}
     };
 
-    Err(format!("Invalid operation between {:?} {:?}", left, right))
+    Err(format!(
+        "Invalid operation '<' between {:?} {:?}",
+        left, right
+    ))
 }
 
 fn compute_less_eq(left: &Value, right: &Value) -> Result<Value, String> {
@@ -762,7 +754,10 @@ fn compute_less_eq(left: &Value, right: &Value) -> Result<Value, String> {
         _ => {}
     };
 
-    Err(format!("Invalid operation between {:?} {:?}", left, right))
+    Err(format!(
+        "Invalid operation '<=' between {:?} {:?}",
+        left, right
+    ))
 }
 
 fn compute_eq(left: &Value, right: &Value) -> Result<Value, String> {
@@ -785,7 +780,10 @@ fn compute_eq(left: &Value, right: &Value) -> Result<Value, String> {
         _ => {}
     };
 
-    Err(format!("Invalid operation between {:?} {:?}", left, right))
+    Err(format!(
+        "Invalid operation '==' between {:?} {:?}",
+        left, right
+    ))
 }
 
 fn compute_neq(left: &Value, right: &Value) -> Result<Value, String> {
@@ -808,7 +806,10 @@ fn compute_neq(left: &Value, right: &Value) -> Result<Value, String> {
         _ => {}
     };
 
-    Err(format!("Invalid operation between {:?} {:?}", left, right))
+    Err(format!(
+        "Invalid operation '!=' between {:?} {:?}",
+        left, right
+    ))
 }
 
 fn compute_add(left: &Value, right: &Value) -> Result<Value, String> {
@@ -828,7 +829,10 @@ fn compute_add(left: &Value, right: &Value) -> Result<Value, String> {
         _ => {}
     };
 
-    Err(format!("Invalid operation between {:?} {:?}", left, right))
+    Err(format!(
+        "Invalid operation '+' between {:?} {:?}",
+        left, right
+    ))
 }
 
 fn compute_minus(left: &Value, right: &Value) -> Result<Value, String> {
@@ -843,7 +847,10 @@ fn compute_minus(left: &Value, right: &Value) -> Result<Value, String> {
         _ => {}
     };
 
-    Err(format!("Invalid operation between {:?} {:?}", left, right))
+    Err(format!(
+        "Invalid operation '-' between {:?} {:?}",
+        left, right
+    ))
 }
 
 fn compute_multiply(left: &Value, right: &Value) -> Result<Value, String> {
@@ -858,7 +865,10 @@ fn compute_multiply(left: &Value, right: &Value) -> Result<Value, String> {
         _ => {}
     };
 
-    Err(format!("Invalid operation between {:?} {:?}", left, right))
+    Err(format!(
+        "Invalid operation '*' between {:?} {:?}",
+        left, right
+    ))
 }
 
 fn compute_divide(left: &Value, right: &Value) -> Result<Value, String> {
@@ -873,7 +883,10 @@ fn compute_divide(left: &Value, right: &Value) -> Result<Value, String> {
         _ => {}
     };
 
-    Err(format!("Invalid operation between {:?} {:?}", left, right))
+    Err(format!(
+        "Invalid operation '/' between {:?} {:?}",
+        left, right
+    ))
 }
 
 fn compute_not(operand: &Value) -> Result<Value, String> {
@@ -1133,6 +1146,28 @@ fn compute_arithmetic() {
         assert_eq!(result.unwrap(), Operand::Value(Value::from(8)));
         assert_eq!(context.context.get("a").unwrap().as_i64().unwrap(), 8);
         assert_eq!(context.context.get("b").unwrap().as_i64().unwrap(), 8);
+    }
+}
+
+#[test]
+fn check_array_get() {
+    let context_json = r#"{"a": [1,2,3]}"#;
+    let mut includes = Mutex::new(HashMap::new());
+
+    {
+        let context_value: Value = serde_json::from_str(context_json).unwrap();
+        let mut context = Context::new(context_value);
+
+        // (1 + 2 * 3 - 6 / 2) * 2
+        let eval = Eval::new(get_expr(r"<% a[1] %>")).unwrap();
+        let result = eval.run(
+            &mut context,
+            &HashMap::new(),
+            &HashMap::new(),
+            &mut includes,
+        );
+
+        assert_eq!(result.unwrap(), Operand::Value(Value::from(2)));
     }
 }
 
