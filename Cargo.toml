@@ -2,7 +2,7 @@
 name = "dojang"
 version = "0.1.6"
 authors = ["Jaebum Lee <kev0960@gmail.com>"]
-edition = "2018"
+edition = "2021"
 description = "Dojang, a EJS like Html Template Engine."
 license = "MIT"
 keywords = ["html-template", "html", "template"]

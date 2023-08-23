@@ -26,9 +26,9 @@ impl fmt::Debug for FunctionContainer {
         let mut f = f.debug_struct("FunctionContainer");
         match self {
             FunctionContainer::F1(_) => f.field("F1", &1),
-            FunctionContainer::F2(_) => f.field("F2", &1),
-            FunctionContainer::F3(_) => f.field("F3", &1),
-            FunctionContainer::F4(_) => f.field("F4", &1),
+            FunctionContainer::F2(_) => f.field("F2", &2),
+            FunctionContainer::F3(_) => f.field("F3", &3),
+            FunctionContainer::F4(_) => f.field("F4", &4),
         };
 
         f.finish()
@@ -70,7 +70,15 @@ impl Context {
             if value.is_array() {
                 match n.parse::<usize>() {
                     Ok(index) => {
-                        value = value.as_array().unwrap().get(index).unwrap();
+                        match value.as_array().unwrap().get(index) {
+                            Some(elem) => value = elem,
+                            None => {
+                                return Err(format!(
+                                    "Element at the specified index of the array does not exist : array {:?}, index : {:?}",
+                                    value, n
+                                ));
+                            }
+                        };
                     }
                     _ => {
                         return Err(format!(
@@ -407,7 +415,7 @@ fn handle_predefined_functions(
                     return Ok(Some(Operand::Value(Value::String(file_data.clone()))));
                 }
                 Err(_) => {
-                    return Err(format!("Error reading file {:?}", file_name));
+                    return Err(format!("Error reading file {:?} {:?}", file_name, f.params));
                 }
             }
         }
