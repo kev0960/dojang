@@ -296,7 +296,7 @@ impl Executer {
                         continue;
                     }
                     _ => {
-                        &Executer::run_eval(context, templates, functions, &eval, includes)?;
+                        Executer::run_eval(context, templates, functions, &eval, includes)?;
                     }
                 },
                 Action::Else() => {}

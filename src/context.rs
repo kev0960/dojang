@@ -4,7 +4,7 @@ use crate::expr::*;
 use serde_json::{Map, Value};
 use std::collections::HashMap;
 use std::fmt;
-use std::fs;
+use std::io::prelude::*;
 use std::sync::Mutex;
 
 static FALSE: Value = Value::Bool(false);
@@ -410,14 +410,14 @@ fn handle_predefined_functions(
         if let Some(file_data) = includes.lock().unwrap().get(&file_name) {
             return Ok(Some(Operand::Value(Value::String(file_data.clone()))));
         } else {
-            match fs::read_to_string(&file_name) {
-                Ok(file_data) => {
-                    return Ok(Some(Operand::Value(Value::String(file_data.clone()))));
-                }
-                Err(_) => {
-                    return Err(format!("Error reading file {:?} {:?}", file_name, f.params));
-                }
-            }
+            let mut file_content = Vec::new();
+            let mut file = std::fs::File::open(&file_name).map_err(|e| e.to_string())?;
+            file.read_to_end(&mut file_content)
+                .map_err(|e| e.to_string())?;
+
+            return Ok(Some(Operand::Value(Value::String(
+                String::from_utf8_lossy(&file_content).to_string(),
+            ))));
         }
     } else if f.name == "include_template" {
         if f.params.len() != 1 {
